@@ -1,0 +1,27 @@
+{
+  "image": "/home/javad/NeuroNote_Pipeline/input_images/withgraphs.png",
+  "chart_polygons": [
+    {
+      "label": "chart",
+      "score": 0.7658628225326538,
+      "polygon": [
+        [
+          503.731,
+          229.188
+        ],
+        [
+          1261.473,
+          229.188
+        ],
+        [
+          1261.473,
+          718.0
+        ],
+        [
+          503.731,
+          718.0
+        ]
+      ]
+    }
+  ]
+}

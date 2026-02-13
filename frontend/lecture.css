@@ -1,0 +1,650 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --line: #d7dbe2;
+  --line-strong: #c8d0db;
+  --text: #0f172a;
+  --muted: #5f6f85;
+  --blue: #2d7ff0;
+  --navy: #0a1734;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+button,
+input,
+a {
+  font: inherit;
+}
+
+.lecture-shell {
+  height: 100dvh;
+  background: var(--bg);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+.lecture-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f5f7fa;
+}
+
+.lecture-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lecture-brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--blue);
+  color: #eaf3ff;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lecture-brand-text {
+  font-weight: 800;
+  font-size: 1.7rem;
+  letter-spacing: -0.03em;
+}
+
+.lecture-head-meta {
+  min-width: 0;
+}
+
+.lecture-title {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lecture-subhead {
+  margin: 2px 0 0;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.lecture-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.back-btn {
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  color: #253958;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.back-btn:hover {
+  background: #f6f9ff;
+}
+
+.lecture-tabs {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f0f3f8;
+  padding: 2px;
+  display: inline-flex;
+}
+
+.lecture-tab {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #4d5f78;
+  padding: 7px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lecture-tab-active {
+  background: #ffffff;
+  color: #12213d;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.12);
+}
+
+.download-btn {
+  text-decoration: none;
+  border: 0;
+  border-radius: 12px;
+  background: var(--navy);
+  color: #ffffff;
+  padding: 9px 14px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.menu-btn {
+  border: 0;
+  background: transparent;
+  color: #67748b;
+  font-size: 1.35rem;
+  width: 30px;
+  height: 30px;
+}
+
+.lecture-main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  border-bottom: 1px solid var(--line);
+}
+
+.slide-pane {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.slide-frame {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  padding: 10px;
+}
+
+.slide-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.slide-image {
+  position: relative;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #f8fafc;
+  border-radius: 4px;
+  z-index: 1;
+}
+
+.text-transition-canvas {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.slide-message {
+  position: absolute;
+  inset: auto 0 14px;
+  text-align: center;
+  margin: 0;
+  color: #607086;
+  font-size: 0.92rem;
+}
+
+.highlight-overlay {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.highlight-box {
+  position: absolute;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.highlight-box.text {
+  background: rgba(255, 200, 0, 0.32);
+  border: 2px solid rgba(255, 200, 0, 0.85);
+  box-shadow: 0 0 18px rgba(255, 200, 0, 0.28);
+}
+
+.highlight-box.visual {
+  background: rgba(0, 200, 255, 0.28);
+  border: 2px solid rgba(0, 200, 255, 0.82);
+  box-shadow: 0 0 18px rgba(0, 200, 255, 0.24);
+}
+
+.highlight-box.cluster {
+  background: rgba(139, 92, 246, 0.26);
+  border: 2px solid rgba(139, 92, 246, 0.84);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.28);
+}
+
+.highlight-box.group {
+  background: rgba(255, 99, 132, 0.2);
+  border: 2px solid rgba(255, 99, 132, 0.8);
+  box-shadow: 0 0 24px rgba(255, 99, 132, 0.24);
+}
+
+.highlight-box.active {
+  opacity: 1;
+  animation: boxPulse 1.5s ease-in-out infinite;
+}
+
+.highlight-box.entering {
+  opacity: 1;
+  animation: boxEnter 0.65s ease forwards;
+}
+
+.highlight-box.exiting {
+  opacity: 1;
+  animation: boxExit 0.24s ease forwards;
+}
+
+.highlight-polygon {
+  fill: transparent;
+  fill-opacity: 0;
+  stroke-width: 3;
+  opacity: 0;
+  stroke-dasharray: var(--poly-len, 240);
+  stroke-dashoffset: var(--poly-len, 240);
+  transition: opacity 0.2s ease;
+}
+
+.highlight-polygon.text {
+  fill: rgba(255, 200, 0, 0.28);
+  stroke: rgba(255, 200, 0, 1);
+}
+
+.highlight-polygon.visual {
+  fill: rgba(0, 200, 255, 0.26);
+  stroke: rgba(0, 200, 255, 1);
+}
+
+.highlight-polygon.active {
+  opacity: 1;
+  fill-opacity: 1;
+  stroke-dashoffset: 0;
+  stroke-width: 5;
+  animation: polygonPulse 1.5s ease-in-out infinite;
+}
+
+.highlight-polygon.text.active {
+  filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.7));
+}
+
+.highlight-polygon.visual.active {
+  filter: drop-shadow(0 0 8px rgba(0, 200, 255, 0.75));
+}
+
+.highlight-polygon.entering {
+  opacity: 1;
+  animation: polygonOutlineFill 0.9s ease forwards;
+}
+
+.highlight-polygon.exiting {
+  opacity: 1;
+  animation: polygonExit 0.24s ease forwards;
+}
+
+@keyframes polygonOutlineFill {
+  0% {
+    fill-opacity: 0;
+    stroke-dashoffset: var(--poly-len, 240);
+  }
+  45% {
+    fill-opacity: 0;
+    stroke-dashoffset: 0;
+  }
+  100% {
+    fill-opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes polygonExit {
+  0% {
+    opacity: 1;
+    fill-opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    fill-opacity: 0;
+  }
+}
+
+@keyframes polygonPulse {
+  0%,
+  100% {
+    stroke-width: 3;
+  }
+  50% {
+    stroke-width: 5;
+  }
+}
+
+@keyframes boxPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes boxEnter {
+  0% {
+    opacity: 0.1;
+    transform: scale(0.98);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes boxExit {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.script-pane {
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: #f8fafd;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.script-pane-head {
+  border-bottom: 1px solid var(--line);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.script-pane-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.script-pane-head button {
+  border: 0;
+  background: #e7eef9;
+  color: #2b6ad1;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+
+.script-panel {
+  overflow: auto;
+  padding: 10px 12px 18px;
+}
+
+.script-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  border-left: 3px solid transparent;
+  padding: 10px 10px 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.script-item:hover {
+  background: #f0f6ff;
+}
+
+.script-item-active {
+  background: #ffffff;
+  border-left-color: #2d7ff0;
+  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.08);
+}
+
+.script-time {
+  display: inline-block;
+  margin: 0 0 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #eaf1ff;
+  color: #2c63bc;
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.script-line {
+  margin: 0;
+  color: #1a2942;
+  line-height: 1.5;
+}
+
+.script-placeholder {
+  color: #627389;
+  padding: 10px 8px;
+}
+
+.timeline-strip {
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 14px;
+}
+
+.timeline-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slide-counter,
+.step-counter {
+  margin: 0;
+  color: #2a3d5b;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.dots-track {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slide-dot {
+  border: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #d6dce6;
+  padding: 0;
+  cursor: pointer;
+}
+
+.slide-dot-active {
+  width: 18px;
+  background: #2d7ff0;
+}
+
+.lecture-controls {
+  background: #f5f7fb;
+  padding: 8px 16px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.track-info {
+  min-width: 0;
+}
+
+.track-title {
+  margin: 0;
+  font-weight: 700;
+  color: #1d2d49;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-time {
+  margin: 2px 0 0;
+  color: #6a7b92;
+  font-size: 0.84rem;
+}
+
+.transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.transport button {
+  border: 0;
+  background: transparent;
+  color: #5f7089;
+  font-size: 1rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.play-btn {
+  background: #0b1f48 !important;
+  color: #ffffff !important;
+  width: 44px !important;
+  height: 44px !important;
+}
+
+.right-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: #607188;
+}
+
+#speedRange {
+  width: 140px;
+}
+
+@media (max-width: 1120px) {
+  .lecture-topbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .lecture-main {
+    grid-template-columns: 1fr;
+  }
+
+  .script-pane {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    max-height: 42vh;
+  }
+}
+
+@media (max-width: 780px) {
+  .lecture-shell {
+    height: 100dvh;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  }
+
+  .lecture-topbar {
+    padding: 10px;
+  }
+
+  .lecture-brand-text {
+    font-size: 1.35rem;
+  }
+
+  .lecture-head-actions {
+    flex-wrap: wrap;
+  }
+
+  .slide-pane {
+    padding: 12px;
+  }
+
+  .timeline-strip {
+    padding: 10px 12px;
+  }
+
+  .lecture-controls {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 10px 12px 14px;
+  }
+
+  .track-info,
+  .right-controls {
+    justify-content: center;
+    text-align: center;
+  }
+}

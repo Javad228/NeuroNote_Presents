@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LecturAI - New Project</title>
+    <link rel="stylesheet" href="/static/new-project.css" />
+  </head>
+  <body>
+    <div class="np-shell">
+      <header class="np-topbar">
+        <div class="np-brand">
+          <div class="np-brand-logo">NN</div>
+          <div class="np-brand-text">LecturAI</div>
+          <span class="np-beta">Beta</span>
+        </div>
+
+        <nav class="np-nav" aria-label="Primary">
+          <a href="/" class="np-nav-link">My Lectures</a>
+          <a href="/new-project" class="np-nav-link np-nav-link-active">New Project</a>
+          <button id="accountBtn" class="np-nav-link np-nav-btn" type="button">Account</button>
+        </nav>
+
+        <button id="avatarBtn" class="np-avatar" type="button" aria-label="Profile">J</button>
+      </header>
+
+      <main class="np-main">
+        <section class="np-left">
+          <div class="np-section-title-wrap">
+            <h1 class="np-section-title">1. Upload slides</h1>
+            <p class="np-section-subtitle">Upload your presentation deck to get started.</p>
+          </div>
+
+          <div id="dropzone" class="np-dropzone" role="button" tabindex="0" aria-label="Upload PDF file">
+            <div class="np-upload-icon">&#9729;</div>
+            <p class="np-drop-main">Drag &amp; drop your file here</p>
+            <p class="np-drop-sub">or <span>browse from your computer</span></p>
+            <p class="np-drop-hint">Supports .pdf, .pptx (Max 50MB)</p>
+            <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden />
+          </div>
+
+          <p id="fileStatus" class="np-file-status">No file selected.</p>
+
+          <section class="np-options-card" aria-label="Processing options">
+            <h2>Processing Options</h2>
+
+            <label class="np-checkbox-row">
+              <input id="optDetect" type="checkbox" />
+              <span>Detect diagrams automatically</span>
+            </label>
+
+            <label class="np-checkbox-row">
+              <input id="optEnhance" type="checkbox" checked />
+              <span>Enhance low-res images</span>
+            </label>
+
+            <label class="np-checkbox-row">
+              <input id="optCaptions" type="checkbox" />
+              <span>Generate closed captions</span>
+            </label>
+          </section>
+        </section>
+
+        <section class="np-right">
+          <div class="np-section-title-wrap">
+            <h1 class="np-section-title">2. Select Voice</h1>
+            <p class="np-section-subtitle">Choose the persona for your AI lecturer.</p>
+          </div>
+
+          <div id="voiceList" class="np-voice-list" role="radiogroup" aria-label="Voice selection">
+            <button class="np-voice-card" data-voice="sarah" type="button" role="radio" aria-checked="false">
+              <div class="np-voice-head">
+                <div class="np-voice-avatar">S</div>
+                <div>
+                  <p class="np-voice-name">Professor Sarah</p>
+                  <p class="np-voice-sub">Academic &amp; Clear</p>
+                </div>
+              </div>
+              <div class="np-audio-bar"><span style="width: 18%"></span><small>0:14</small></div>
+            </button>
+
+            <button class="np-voice-card np-voice-card-selected" data-voice="david" type="button" role="radio" aria-checked="true">
+              <div class="np-voice-head">
+                <div class="np-voice-avatar">D</div>
+                <div>
+                  <p class="np-voice-name">Tech Lead David</p>
+                  <p class="np-voice-sub">Modern &amp; Energetic</p>
+                </div>
+                <span class="np-check">&#10003;</span>
+              </div>
+              <div class="np-audio-bar"><span style="width: 35%"></span><small>0:08</small></div>
+            </button>
+
+            <button class="np-voice-card" data-voice="maya" type="button" role="radio" aria-checked="false">
+              <div class="np-voice-head">
+                <div class="np-voice-avatar">M</div>
+                <div>
+                  <p class="np-voice-name">Storyteller Maya</p>
+                  <p class="np-voice-sub">Warm &amp; Narrative</p>
+                </div>
+              </div>
+              <div class="np-audio-bar"><span style="width: 12%"></span><small>0:12</small></div>
+            </button>
+          </div>
+
+          <button id="generateBtn" class="np-generate" type="button" disabled>Generate Lecture</button>
+          <p class="np-estimate">Estimated time: ~2 mins</p>
+          <p id="submitStatus" class="np-submit-status" aria-live="polite"></p>
+        </section>
+      </main>
+
+      <footer class="np-footer">
+        <span>&copy; 2023 LecturAI Inc.</span>
+        <div class="np-footer-links">
+          <button type="button" id="helpBtn">Help</button>
+          <button type="button" id="termsBtn">Terms</button>
+          <button type="button" id="privacyBtn">Privacy</button>
+        </div>
+      </footer>
+    </div>
+
+    <script src="/static/new-project.js"></script>
+  </body>
+</html>

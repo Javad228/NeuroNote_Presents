@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+pymupdf
+azure-ai-documentintelligence
+python-dotenv
