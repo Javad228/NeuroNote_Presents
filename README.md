@@ -12,7 +12,7 @@ Web application to:
 
 ## Project Structure
 
-- `backend/main.py`: FastAPI app wiring + static frontend serving
+- `backend/main.py`: FastAPI app wiring + API/static legacy routes
 - `backend/api/routes.py`: HTTP endpoints
 - `backend/config.py`: environment configuration
 - `backend/schemas.py`: option model(s)
@@ -21,9 +21,12 @@ Web application to:
 - `backend/services/neuronote_client.py`: upstream NeuroNote API client
 - `backend/services/orchestrator.py`: end-to-end orchestration flow
 - `backend/services/jobs.py`: local jobs metadata + thumbnail resolution
-- `frontend/index.html`: dashboard UI (sidebar/topbar/jobs grid)
-- `frontend/style.css`: dashboard styles
-- `frontend/app.js`: jobs fetch + client-side search
+- `frontend-next/`: Next.js frontend (primary UI)
+  - `frontend-next/pages/index.js`: dashboard route
+  - `frontend-next/pages/new-project.js`: upload/project route
+  - `frontend-next/pages/lecture/[job_id].js`: lecture player route
+  - `frontend-next/public/static/*`: migrated CSS/JS assets from legacy frontend
+- `frontend/`: legacy static frontend source (kept for reference)
 - `app.py`: compatibility entrypoint (`uvicorn app:app`)
 
 ## Requirements
@@ -33,6 +36,13 @@ Install local webapp deps:
 ```bash
 cd /home/javad/NeuroNote_Presents
 pip install -r requirements.txt
+```
+
+Install Next.js frontend deps:
+
+```bash
+cd /home/javad/NeuroNote_Presents/frontend-next
+npm install
 ```
 
 Also ensure external dependencies are installed for:
@@ -59,14 +69,21 @@ Azure OCR credentials (required):
 
 ## Run
 
-Start NeuroNote API first (default expected at `http://127.0.0.1:8000`), then run this app:
+Start NeuroNote API first (default expected at `http://127.0.0.1:8000`), then run backend:
 
 ```bash
 cd /home/javad/NeuroNote_Presents
 uvicorn backend.main:app --host 0.0.0.0 --port 8100 --reload
 ```
 
-Compatibility run command:
+Then run Next.js frontend:
+
+```bash
+cd /home/javad/NeuroNote_Presents/frontend-next
+npm run dev
+```
+
+Compatibility backend run command:
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8100 --reload
@@ -74,9 +91,14 @@ uvicorn app:app --host 0.0.0.0 --port 8100 --reload
 
 Open:
 
-- UI: `http://127.0.0.1:8100/`
+- UI (Next.js): `http://127.0.0.1:3000/`
 - Health: `http://127.0.0.1:8100/healthz`
 - API docs: `http://127.0.0.1:8100/docs`
+
+Notes:
+
+- Next.js proxies `/api/*` and `/healthz` to backend via `frontend-next/next.config.js`.
+- You can override backend origin by setting `BACKEND_ORIGIN` before `npm run dev` (default: `http://127.0.0.1:8100`).
 
 ## API
 

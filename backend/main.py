@@ -20,24 +20,38 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(router)
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    legacy_frontend_available = FRONTEND_DIR.is_dir()
+    if legacy_frontend_available:
+        app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
     @app.on_event("startup")
     async def ensure_directories() -> None:
         config = get_config()
         config.jobs_root.mkdir(parents=True, exist_ok=True)
 
-    @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "index.html")
+    if legacy_frontend_available:
 
-    @app.get("/new-project")
-    async def new_project() -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "new-project.html")
+        @app.get("/")
+        async def index() -> FileResponse:
+            return FileResponse(FRONTEND_DIR / "index.html")
 
-    @app.get("/lecture/{job_id}")
-    async def lecture(job_id: str) -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "lecture.html")
+        @app.get("/new-project")
+        async def new_project() -> FileResponse:
+            return FileResponse(FRONTEND_DIR / "new-project.html")
+
+        @app.get("/lecture/{job_id}")
+        async def lecture(job_id: str) -> FileResponse:
+            return FileResponse(FRONTEND_DIR / "lecture.html")
+    else:
+
+        @app.get("/")
+        async def index() -> dict[str, str]:
+            return {
+                "service": "NeuroNote Presents Orchestrator",
+                "frontend": "Use the Next.js app in frontend-next/",
+                "health": "/healthz",
+                "docs": "/docs",
+            }
 
     return app
 
