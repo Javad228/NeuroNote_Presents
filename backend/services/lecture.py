@@ -24,11 +24,27 @@ class LectureService:
     def __init__(self, config: AppConfig):
         self.config = config
         self.jobs_service = JobsService(config)
-        self._output_roots = [
-            (config.neuronote_pipeline_root / "neuronote" / "jobs").resolve(),
-            (config.neuronote_pipeline_root / "jobs").resolve(),
-            config.neuronote_pipeline_root.resolve(),
+        candidates = [
+            config.neuronote_pipeline_root / "neuronote" / "jobs",
+            config.neuronote_pipeline_root / "jobs",
+            config.neuronote_pipeline_root,
+            *config.neuronote_artifact_roots,
+            # Local fallback when artifacts are written by the separate NeuroPresents backend.
+            Path.home() / "NeuroPresentsBackend" / "neuropresentsbackend" / "jobs",
         ]
+
+        self._output_roots: list[Path] = []
+        seen: set[str] = set()
+        for root in candidates:
+            try:
+                resolved = root.resolve()
+            except Exception:
+                continue
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            self._output_roots.append(resolved)
 
     @staticmethod
     def _read_json(path: Path | None) -> dict[str, Any] | None:
@@ -403,14 +419,24 @@ class LectureService:
                 for image in images:
                     if not isinstance(image, dict):
                         continue
+                    object_path = image.get("object_path")
+                    slide_file: str | None = None
+                    if isinstance(object_path, str) and object_path.strip():
+                        slide_file = Path(object_path).name
+
                     image_name = image.get("image_name")
-                    if not isinstance(image_name, str) or not image_name:
+                    if slide_file is None and isinstance(image_name, str) and image_name:
+                        slide_file = f"{image_name}.png"
+                    if slide_file is None:
                         continue
 
-                    slide_number = self._parse_slide_number(image_name)
+                    local_image_name = Path(slide_file).stem
+                    slide_number = self._parse_slide_number(local_image_name)
+                    if slide_number is None and isinstance(image_name, str):
+                        slide_number = self._parse_slide_number(image_name)
                     if slide_number is None:
                         continue
-                    slide_file = f"{image_name}.png"
+
                     if self.get_slide_image_path(job_id, slide_file) is None:
                         continue
 
@@ -424,7 +450,7 @@ class LectureService:
                     region_payload = self._extract_region_payload(regions_payload)
                     rendered_step_urls = self.ensure_rendered_step_images(
                         job_id=job_id,
-                        image_name=image_name,
+                        image_name=local_image_name,
                         steps=steps,
                         regions=region_payload["regions"],
                         clusters=region_payload["clusters"],
@@ -434,7 +460,7 @@ class LectureService:
                     slides.append(
                         {
                             "slide_number": slide_number,
-                            "image_name": image_name,
+                            "image_name": local_image_name,
                             "image_url": f"/api/jobs/{job_id}/slides/{slide_file}",
                             "script_title": script_payload.get("title") if isinstance(script_payload, dict) else None,
                             "script_summary": script_payload.get("summary") if isinstance(script_payload, dict) else None,

@@ -2,6 +2,8 @@ import Head from "next/head";
 import Script from "next/script";
 
 export default function NewProjectPage() {
+  const backendOrigin = (process.env.NEXT_PUBLIC_BACKEND_ORIGIN || "").replace(/\/+$/, "");
+
   return (
     <>
       <Head>
@@ -158,6 +160,9 @@ export default function NewProjectPage() {
         </footer>
       </div>
 
+      <Script id="np-backend-origin" strategy="beforeInteractive">
+        {`window.__BACKEND_ORIGIN__ = ${JSON.stringify(backendOrigin)};`}
+      </Script>
       <Script src="/static/new-project.js" strategy="afterInteractive" />
     </>
   );

@@ -137,15 +137,19 @@ async def get_job_audio(
 async def process_pdf(
     pdf: UploadFile = File(...),
     method: str = Query("pelt", pattern="^(pelt|window|binseg)$"),
-    penalty: Optional[float] = Query(None, description="CPD penalty. Omit for auto."),
-    n_bkps: Optional[int] = Query(None, ge=1, description="Fixed breakpoints for window/binseg."),
+    penalty: Optional[float] = Query(None, description="Compatibility-only; ignored in current upstream flow."),
+    n_bkps: Optional[int] = Query(
+        None,
+        ge=1,
+        description="Compatibility-only; ignored in current upstream flow.",
+    ),
     min_chunk: int = Query(2, ge=1),
     use_embeddings: bool = Query(True),
     use_cache: bool = Query(True),
     skip_generation: bool = Query(False, description="Forwarded to NeuroNote API."),
     previous_context: Optional[str] = Query(
         None,
-        description="Optional context forwarded only to NeuroNote single endpoint /api/process.",
+        description="Compatibility-only; ignored in current upstream flow.",
     ),
     render_dpi: Optional[int] = Query(None, ge=72, le=600),
     config: AppConfig = Depends(get_config),

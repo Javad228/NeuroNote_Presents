@@ -1,5 +1,25 @@
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
-const PROCESS_URL = "/api/process-pdf?method=pelt&use_cache=true&skip_generation=false";
+
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function resolveBackendOrigin() {
+  const configured = trimTrailingSlash(window.__BACKEND_ORIGIN__);
+  if (configured) {
+    return configured;
+  }
+
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
+    return `${window.location.protocol}//${host}:8100`;
+  }
+
+  return "";
+}
+
+const BACKEND_ORIGIN = resolveBackendOrigin();
+const PROCESS_URL = `${BACKEND_ORIGIN}/api/process-pdf?method=pelt&use_cache=true&skip_generation=false`;
 
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
@@ -166,15 +186,17 @@ async function submitPdf() {
       body: formData,
     });
 
+    const rawBody = await response.text();
     let payload = null;
     try {
-      payload = await response.json();
+      payload = rawBody ? JSON.parse(rawBody) : null;
     } catch (jsonError) {
       payload = null;
     }
 
     if (!response.ok) {
-      const message = payload?.detail || `Request failed with status ${response.status}.`;
+      const message =
+        payload?.detail || (rawBody || "").trim() || `Request failed with status ${response.status}.`;
       throw new Error(message);
     }
 

@@ -123,7 +123,7 @@ export default function LecturePage() {
         </footer>
       </div>
 
-      <Script src="/static/lecture.js?v=19" strategy="afterInteractive" />
+      <Script src="/static/lecture.js?v=20" strategy="afterInteractive" />
     </>
   );
 }

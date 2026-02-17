@@ -21,10 +21,16 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MODEL = "gpt-4o-mini-tts"
-DEFAULT_VOICE = "alloy"
+DEFAULT_VOICE = "marin"
 DEFAULT_MAX_CHARS = 3500
 OPENAI_AUDIO_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
-SLIDE_INDEX_RE = re.compile(r"page_(\d+)$")
+DEFAULT_TTS_INSTRUCTIONS = (
+    "Speak as a patient university instructor.\n"
+    "Explain concepts clearly and methodically.\n"
+    "Use short pauses between ideas.\n"
+    "Avoid dramatic emphasis."
+)
+SLIDE_INDEX_RE = re.compile(r"(?:^|_)page_(\d+)$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +89,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not insert 'Slide N.' headings in the saved transcript text file.",
     )
+    parser.add_argument(
+        "--instructions",
+        default=os.getenv("TRANSCRIPT_TTS_INSTRUCTIONS", DEFAULT_TTS_INSTRUCTIONS),
+        help=(
+            "Style instructions forwarded to the TTS model. "
+            "Default uses a patient university instructor style."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -114,12 +128,73 @@ def read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def resolve_output_roots(neuronote_pipeline_root: Path) -> list[Path]:
-    return [
-        (neuronote_pipeline_root / "neuronote" / "jobs").resolve(),
-        (neuronote_pipeline_root / "jobs").resolve(),
-        neuronote_pipeline_root.resolve(),
+def parse_artifact_roots(raw: str) -> list[Path]:
+    if not raw:
+        return []
+
+    tokens: list[str] = []
+    for part in raw.split(","):
+        tokens.extend(part.split(os.pathsep))
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for token in tokens:
+        item = token.strip()
+        if not item:
+            continue
+        try:
+            resolved = Path(item).expanduser().resolve()
+        except Exception:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def resolve_output_roots(
+    neuronote_pipeline_root: Path,
+    extra_roots: list[Path] | None = None,
+) -> list[Path]:
+    candidates: list[Path] = [
+        neuronote_pipeline_root / "neuronote" / "jobs",
+        neuronote_pipeline_root / "jobs",
+        neuronote_pipeline_root,
+        Path.home() / "NeuroPresentsBackend" / "neuropresentsbackend" / "jobs",
     ]
+    if extra_roots:
+        candidates.extend(extra_roots)
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for root in candidates:
+        try:
+            resolved = root.resolve()
+        except Exception:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def parse_slide_number(*values: Any) -> int | None:
+    for value in values:
+        if not isinstance(value, str) or not value:
+            continue
+        stem = Path(value).stem
+        match = SLIDE_INDEX_RE.search(stem)
+        if not match:
+            continue
+        try:
+            return int(match.group(1))
+        except Exception:
+            continue
+    return None
 
 
 def resolve_artifact_path(artifact_url: str, output_roots: list[Path]) -> Path | None:
@@ -140,7 +215,11 @@ def resolve_artifact_path(artifact_url: str, output_roots: list[Path]) -> Path |
     return None
 
 
-def extract_step_items_from_job(job_dir: Path, neuronote_pipeline_root: Path) -> list[dict[str, Any]]:
+def extract_step_items_from_job(
+    job_dir: Path,
+    neuronote_pipeline_root: Path,
+    artifact_roots: list[Path] | None = None,
+) -> list[dict[str, Any]]:
     result_path = job_dir / "result.json"
     if not result_path.exists():
         raise FileNotFoundError(f"Missing result.json in job: {job_dir}")
@@ -150,7 +229,7 @@ def extract_step_items_from_job(job_dir: Path, neuronote_pipeline_root: Path) ->
     if not isinstance(chunks, list):
         raise RuntimeError("result.json has no neuronote_chunks list")
 
-    output_roots = resolve_output_roots(neuronote_pipeline_root)
+    output_roots = resolve_output_roots(neuronote_pipeline_root, artifact_roots)
     items: list[dict[str, Any]] = []
 
     for chunk in chunks:
@@ -170,14 +249,19 @@ def extract_step_items_from_job(job_dir: Path, neuronote_pipeline_root: Path) ->
             if not isinstance(image, dict):
                 continue
             image_name = image.get("image_name")
+            object_path = image.get("object_path")
             script_url = image.get("script_url")
-            if not isinstance(image_name, str) or not isinstance(script_url, str):
+            if not isinstance(script_url, str):
                 continue
 
-            match = SLIDE_INDEX_RE.match(image_name)
-            if not match:
+            slide_number = parse_slide_number(object_path, image_name)
+            if slide_number is None:
                 continue
-            slide_number = int(match.group(1))
+            normalized_image_name = (
+                Path(object_path).stem
+                if isinstance(object_path, str) and object_path.strip()
+                else str(image_name or f"page_{slide_number:03d}")
+            )
 
             script_path = resolve_artifact_path(script_url, output_roots)
             if script_path is None:
@@ -201,7 +285,7 @@ def extract_step_items_from_job(job_dir: Path, neuronote_pipeline_root: Path) ->
                 items.append(
                     {
                         "slide_number": slide_number,
-                        "image_name": image_name,
+                        "image_name": normalized_image_name,
                         "step_number": raw_idx,
                         "step_id": str(step.get("step_id") or f"s{raw_idx}"),
                         "line": text,
@@ -270,6 +354,7 @@ def synthesize_wav_chunk(
     model: str,
     voice: str,
     text: str,
+    instructions: str | None = None,
     timeout_seconds: float = 180.0,
 ) -> bytes:
     headers = {
@@ -282,6 +367,8 @@ def synthesize_wav_chunk(
         "input": text,
         "response_format": "wav",
     }
+    if instructions and instructions.strip():
+        payload["instructions"] = instructions.strip()
     req = urllib.request.Request(
         OPENAI_AUDIO_SPEECH_URL,
         data=json.dumps(payload).encode("utf-8"),
@@ -294,6 +381,25 @@ def synthesize_wav_chunk(
             body = resp.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        # Backward compatibility: retry once without instructions for models/endpoints
+        # that do not support this field.
+        if instructions and "instructions" in detail.lower():
+            fallback_payload = dict(payload)
+            fallback_payload.pop("instructions", None)
+            fallback_req = urllib.request.Request(
+                OPENAI_AUDIO_SPEECH_URL,
+                data=json.dumps(fallback_payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(fallback_req, timeout=timeout_seconds) as resp:
+                    status = int(resp.getcode() or 0)
+                    body = resp.read()
+                if status < 400:
+                    return body
+            except Exception:
+                pass
         raise RuntimeError(f"TTS request failed ({exc.code}): {detail[:500]}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"TTS request failed: {exc}") from exc
@@ -359,6 +465,7 @@ def synthesize_text_to_wav(
     voice: str,
     text: str,
     max_chars: int,
+    instructions: str | None = None,
 ) -> tuple[bytes, int]:
     chunks = split_text(text, max_chars)
     if not chunks:
@@ -372,6 +479,7 @@ def synthesize_text_to_wav(
                 model=model,
                 voice=voice,
                 text=chunk,
+                instructions=instructions,
             )
         )
 
@@ -427,62 +535,46 @@ def load_dotenv_file(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-def main() -> int:
-    load_dotenv_file(Path(".env"))
-    args = parse_args()
-
-    api_key = os.getenv("OPENAI_API_KEY")
+def generate_job_audio(
+    *,
+    job_id: str,
+    jobs_root: Path,
+    neuronote_pipeline_root: Path,
+    model: str = DEFAULT_MODEL,
+    voice: str = DEFAULT_VOICE,
+    max_chars: int = DEFAULT_MAX_CHARS,
+    include_slide_headings: bool = True,
+    instructions: str = DEFAULT_TTS_INSTRUCTIONS,
+    api_key: str | None = None,
+    output_path: Path | None = None,
+    timestamps_path: Path | None = None,
+    artifact_roots: list[Path] | None = None,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    api_key = api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
+    if max_chars < 500:
+        raise ValueError("max_chars must be at least 500")
 
-    if args.max_chars < 500:
-        raise ValueError("--max-chars must be at least 500")
-
-    jobs_root = Path(args.jobs_root).expanduser().resolve()
-    pipeline_root = Path(args.neuronote_pipeline_root).expanduser().resolve()
-
-    job_dir: Path | None = None
-    output_path: Path
-
-    if args.transcript_file:
-        transcript_path = Path(args.transcript_file).expanduser().resolve()
-        transcript_text = transcript_path.read_text().strip()
-        if not transcript_text:
-            raise RuntimeError(f"Transcript file is empty: {transcript_path}")
-
-        print("Synthesizing transcript file...")
-        merged_wav, chunk_count = synthesize_text_to_wav(
-            api_key=api_key,
-            model=args.model,
-            voice=args.voice,
-            text=transcript_text,
-            max_chars=args.max_chars,
-        )
-
-        output_path = resolve_output_path(args, None)
-        write_wav_file(merged_wav, output_path)
-
-        print(f"Audio written to: {output_path}")
-        print(f"Chunks: {chunk_count}")
-        print(f"Characters: {len(' '.join(transcript_text.split()))}")
-        return 0
-
-    if not jobs_root.exists():
-        raise FileNotFoundError(f"Jobs root not found: {jobs_root}")
-
-    job_id = args.job_id or newest_job_id(jobs_root)
+    jobs_root = Path(jobs_root).expanduser().resolve()
+    neuronote_pipeline_root = Path(neuronote_pipeline_root).expanduser().resolve()
     job_dir = resolve_job_dir(jobs_root, job_id)
 
     step_items = extract_step_items_from_job(
         job_dir=job_dir,
-        neuronote_pipeline_root=pipeline_root,
+        neuronote_pipeline_root=neuronote_pipeline_root,
+        artifact_roots=artifact_roots,
     )
-
     transcript_text = build_transcript_text(
         step_items,
-        include_slide_headings=not args.no_slide_headings,
+        include_slide_headings=include_slide_headings,
     )
     (job_dir / "transcript.txt").write_text(transcript_text)
+
+    def log(message: str) -> None:
+        if verbose:
+            print(message)
 
     all_step_wavs: list[bytes] = []
     timing_steps: list[dict[str, Any]] = []
@@ -491,7 +583,7 @@ def main() -> int:
 
     for idx, item in enumerate(step_items, start=1):
         line = str(item["line"])
-        print(
+        log(
             "Synthesizing step "
             f"{idx}/{len(step_items)} "
             f"(slide {item['slide_number']} step {item['step_number']})"
@@ -499,10 +591,11 @@ def main() -> int:
 
         step_wav, chunk_count = synthesize_text_to_wav(
             api_key=api_key,
-            model=args.model,
-            voice=args.voice,
+            model=model,
+            voice=voice,
             text=line,
-            max_chars=args.max_chars,
+            max_chars=max_chars,
+            instructions=instructions,
         )
         total_chunks += chunk_count
 
@@ -525,27 +618,110 @@ def main() -> int:
         all_step_wavs.append(step_wav)
 
     merged_wav = merge_wav_chunks_to_bytes(all_step_wavs)
-    output_path = resolve_output_path(args, job_dir)
-    write_wav_file(merged_wav, output_path)
+    resolved_output_path = (output_path or (job_dir / "transcript_audio.wav")).expanduser().resolve()
+    write_wav_file(merged_wav, resolved_output_path)
 
-    timestamps_path = resolve_timestamps_path(args, job_dir)
-    if timestamps_path is not None:
-        timestamps_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_timestamps_path: Path | None
+    if timestamps_path is None:
+        resolved_timestamps_path = (job_dir / "transcript_audio_timestamps.json").resolve()
+    else:
+        resolved_timestamps_path = timestamps_path.expanduser().resolve()
+
+    if resolved_timestamps_path is not None:
+        resolved_timestamps_path.parent.mkdir(parents=True, exist_ok=True)
         timestamps_payload = {
             "job_id": job_id,
-            "audio_file": output_path.name,
-            "model": args.model,
-            "voice": args.voice,
+            "audio_file": resolved_output_path.name,
+            "model": model,
+            "voice": voice,
+            "instructions": instructions,
             "steps": timing_steps,
             "total_duration_ms": current_ms,
         }
-        timestamps_path.write_text(json.dumps(timestamps_payload, indent=2))
-        print(f"Timestamps written to: {timestamps_path}")
+        resolved_timestamps_path.write_text(json.dumps(timestamps_payload, indent=2))
+        log(f"Timestamps written to: {resolved_timestamps_path}")
 
-    print(f"Audio written to: {output_path}")
-    print(f"Steps: {len(step_items)}")
-    print(f"Chunks: {total_chunks}")
-    print(f"Characters: {len(' '.join(transcript_text.split()))}")
+    log(f"Audio written to: {resolved_output_path}")
+    log(f"Steps: {len(step_items)}")
+    log(f"Chunks: {total_chunks}")
+    log(f"Characters: {len(' '.join(transcript_text.split()))}")
+
+    return {
+        "job_id": job_id,
+        "audio_path": str(resolved_output_path),
+        "timestamps_path": str(resolved_timestamps_path) if resolved_timestamps_path is not None else None,
+        "steps": len(step_items),
+        "chunks": total_chunks,
+        "characters": len(" ".join(transcript_text.split())),
+        "total_duration_ms": current_ms,
+        "model": model,
+        "voice": voice,
+    }
+
+
+def main() -> int:
+    load_dotenv_file(Path(".env"))
+    args = parse_args()
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+
+    if args.max_chars < 500:
+        raise ValueError("--max-chars must be at least 500")
+
+    jobs_root = Path(args.jobs_root).expanduser().resolve()
+    pipeline_root = Path(args.neuronote_pipeline_root).expanduser().resolve()
+
+    if args.transcript_file:
+        transcript_path = Path(args.transcript_file).expanduser().resolve()
+        transcript_text = transcript_path.read_text().strip()
+        if not transcript_text:
+            raise RuntimeError(f"Transcript file is empty: {transcript_path}")
+
+        print("Synthesizing transcript file...")
+        merged_wav, chunk_count = synthesize_text_to_wav(
+            api_key=api_key,
+            model=args.model,
+            voice=args.voice,
+            text=transcript_text,
+            max_chars=args.max_chars,
+            instructions=args.instructions,
+        )
+
+        output_path = resolve_output_path(args, None)
+        write_wav_file(merged_wav, output_path)
+
+        print(f"Audio written to: {output_path}")
+        print(f"Chunks: {chunk_count}")
+        print(f"Characters: {len(' '.join(transcript_text.split()))}")
+        return 0
+
+    if not jobs_root.exists():
+        raise FileNotFoundError(f"Jobs root not found: {jobs_root}")
+
+    job_id = args.job_id or newest_job_id(jobs_root)
+
+    artifact_roots = parse_artifact_roots(os.getenv("NEURONOTE_ARTIFACT_ROOTS", ""))
+    generate_job_audio(
+        job_id=job_id,
+        jobs_root=jobs_root,
+        neuronote_pipeline_root=pipeline_root,
+        model=args.model,
+        voice=args.voice,
+        max_chars=args.max_chars,
+        include_slide_headings=not args.no_slide_headings,
+        instructions=args.instructions,
+        api_key=api_key,
+        output_path=Path(args.output).expanduser().resolve() if args.output else None,
+        timestamps_path=(
+            Path(args.timestamps_file).expanduser().resolve()
+            if args.timestamps_file
+            else None
+        ),
+        artifact_roots=artifact_roots,
+        verbose=True,
+    )
     return 0
 
 

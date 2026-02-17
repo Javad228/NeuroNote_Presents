@@ -38,6 +38,8 @@ const state = {
   audioSyncInterval: null,
   playbackTimeline: [],
   totalTimelineMs: 0,
+  lectureRefreshTimer: null,
+  lectureRefreshInFlight: false,
 };
 
 function getJobIdFromPath() {
@@ -87,6 +89,139 @@ function hasPerStepAudioTiming() {
     }
   }
   return totalSteps > 0;
+}
+
+function slideStepCountSignature(payload) {
+  const slides = payload?.slides || [];
+  return slides
+    .map((slide) => {
+      if (!Array.isArray(slide?.steps)) {
+        return "x";
+      }
+      return String(slide.steps.length);
+    })
+    .join(",");
+}
+
+function shouldPollLecturePayload(payload) {
+  if (!payload || !Array.isArray(payload.slides) || payload.slides.length === 0) {
+    return true;
+  }
+  if (!payload.audio_url) {
+    return true;
+  }
+  return payload.slides.some((slide) => !Array.isArray(slide?.steps) || slide.steps.length === 0);
+}
+
+function stopLectureRefreshPolling() {
+  if (state.lectureRefreshTimer) {
+    clearInterval(state.lectureRefreshTimer);
+    state.lectureRefreshTimer = null;
+  }
+}
+
+async function applyLecturePayload(payload, options = {}) {
+  const preservePosition = Boolean(options.preservePosition);
+  const previousLecture = state.lecture;
+  const previousSlideNumber = Number(previousLecture?.slides?.[state.currentSlideIndex]?.slide_number);
+  const wasPlaying = state.isPlaying;
+  const previousGlobalMs = preservePosition && previousLecture ? getCurrentGlobalMs() : 0;
+
+  if (wasPlaying) {
+    setPlaying(false);
+  }
+
+  state.lecture = payload;
+  if (preservePosition) {
+    if (Number.isFinite(previousSlideNumber)) {
+      const nextSlideIndex = (payload.slides || []).findIndex(
+        (slide) => Number(slide?.slide_number) === previousSlideNumber
+      );
+      if (nextSlideIndex >= 0) {
+        state.currentSlideIndex = nextSlideIndex;
+      }
+    }
+  } else {
+    state.currentSlideIndex = 0;
+    state.currentStepIndex = 0;
+  }
+
+  buildPlaybackTimeline();
+  if (preservePosition && previousGlobalMs > 0) {
+    const location = locateTimelinePosition(previousGlobalMs);
+    if (location) {
+      state.currentSlideIndex = location.slideIndex;
+      state.currentStepIndex = location.stepIndex;
+    }
+  }
+
+  state.currentImageName = "";
+  state.renderedStepKey = "";
+  setupNarrationAudio(payload.audio_url || "");
+  setPlaybackRate(state.playbackRate);
+  renderAll();
+
+  if (wasPlaying) {
+    if (hasNarrationAudio()) {
+      state.narrationAudio.currentTime = Math.max(0, previousGlobalMs / 1000);
+      setPlaying(true);
+      try {
+        await state.narrationAudio.play();
+        syncUiToAudioPosition();
+      } catch {
+        setPlaying(false);
+      }
+    } else {
+      setPlaying(true);
+      schedulePlaybackTick();
+    }
+  }
+}
+
+async function refreshLecturePayload() {
+  if (!state.jobId || state.lectureRefreshInFlight) {
+    return;
+  }
+  state.lectureRefreshInFlight = true;
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(state.jobId)}/lecture`);
+    const payload = await response.json();
+    if (!response.ok || !payload || typeof payload !== "object") {
+      return;
+    }
+
+    const previous = state.lecture;
+    const changed =
+      !previous ||
+      previous.audio_url !== payload.audio_url ||
+      slideStepCountSignature(previous) !== slideStepCountSignature(payload) ||
+      (previous.slides || []).length !== (payload.slides || []).length;
+
+    if (changed) {
+      await applyLecturePayload(payload, { preservePosition: true });
+    }
+
+    if (!shouldPollLecturePayload(payload)) {
+      stopLectureRefreshPolling();
+    }
+  } catch {
+    // Keep the last known payload if refresh fails temporarily.
+  } finally {
+    state.lectureRefreshInFlight = false;
+  }
+}
+
+function ensureLectureRefreshPolling() {
+  if (!shouldPollLecturePayload(state.lecture)) {
+    stopLectureRefreshPolling();
+    return;
+  }
+  if (state.lectureRefreshTimer) {
+    return;
+  }
+  state.lectureRefreshTimer = setInterval(() => {
+    void refreshLecturePayload();
+  }, 8000);
 }
 
 function buildPlaybackTimeline() {
@@ -1070,6 +1205,7 @@ function schedulePlaybackTick() {
 
   const steps = getCurrentSteps();
   if (steps.length === 0) {
+    void refreshLecturePayload();
     setPlaying(false);
     return;
   }
@@ -1121,17 +1257,12 @@ async function loadLecture() {
       throw new Error(payload?.detail || `Request failed: ${response.status}`);
     }
 
-    state.lecture = payload;
-    state.currentSlideIndex = 0;
-    state.currentStepIndex = 0;
-    buildPlaybackTimeline();
-    setupNarrationAudio(payload.audio_url || "");
+    await applyLecturePayload(payload, { preservePosition: false });
+    ensureLectureRefreshPolling();
 
     lectureTitle.textContent = payload.title || jobId;
     lectureSubhead.textContent = `MODULE 1 • JOB ${jobId}`;
     downloadPdfBtn.href = payload.input_pdf_url || "#";
-
-    renderAll();
   } catch (error) {
     lectureTitle.textContent = "Failed to load lecture";
     lectureSubhead.textContent = `JOB ${jobId}`;
@@ -1293,6 +1424,7 @@ window.addEventListener("resize", updateHighlightPositions);
 if (window.ResizeObserver) {
   new ResizeObserver(updateHighlightPositions).observe(imageContainer);
 }
+window.addEventListener("beforeunload", stopLectureRefreshPolling);
 
 setPlaybackRate(1.0);
 loadLecture();
