@@ -706,9 +706,37 @@ function updatePolygonMetrics(polygonEl) {
   }
 }
 
+function mapScaledPolygon(poly, offsetX, offsetY, scaleX, scaleY) {
+  if (!Array.isArray(poly)) {
+    return [];
+  }
+
+  const scaled = [];
+  poly.forEach((pt) => {
+    if (!Array.isArray(pt) || pt.length < 2) {
+      return;
+    }
+    const x = Number(pt[0]);
+    const y = Number(pt[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+    scaled.push([offsetX + x * scaleX, offsetY + y * scaleY]);
+  });
+  return scaled;
+}
+
+function toSvgPolygonPoints(points) {
+  return points.map((pt) => `${pt[0]},${pt[1]}`).join(" ");
+}
+
+function toCssPolygonPoints(points) {
+  return points.map((pt) => `${pt[0]}px ${pt[1]}px`).join(", ");
+}
+
 function clearHighlights() {
   highlightOverlay
-    .querySelectorAll(".highlight-box, .highlight-polygon")
+    .querySelectorAll(".highlight-box, .highlight-polygon, .highlight-lift, .highlight-lift-underlay")
     .forEach((el) => el.classList.remove("active", "entering", "exiting"));
 }
 
@@ -791,29 +819,63 @@ function createHighlightBoxes() {
       return;
     }
 
+    const appendVisualLift = (partIndex) => {
+      const part = Number.isInteger(partIndex) ? String(partIndex) : null;
+      const underlay = document.createElement("div");
+      underlay.dataset.id = regionId;
+      underlay.dataset.type = "lift-underlay";
+      if (part !== null) {
+        underlay.dataset.part = part;
+      }
+      underlay.classList.add("highlight-lift-underlay", "visual");
+      highlightOverlay.appendChild(underlay);
+
+      const lift = document.createElement("div");
+      lift.dataset.id = regionId;
+      lift.dataset.type = "lift";
+      if (part !== null) {
+        lift.dataset.part = part;
+      }
+      lift.classList.add("highlight-lift", "visual");
+      highlightOverlay.appendChild(lift);
+    };
+
+    if (kind === "visual") {
+      if (Array.isArray(region.polygons) && region.polygons.length > 0) {
+        region.polygons.forEach((_, idx) => {
+          appendVisualLift(idx);
+        });
+        return;
+      }
+
+      if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
+        appendVisualLift(0);
+      }
+      // Visual detections are polygon-only; do not fallback to bbox.
+      return;
+    }
+
+    const appendPolygon = (partIndex) => {
+      const part = Number.isInteger(partIndex) ? String(partIndex) : null;
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.dataset.id = regionId;
+      polygon.dataset.type = "polygon";
+      if (part !== null) {
+        polygon.dataset.part = part;
+      }
+      polygon.classList.add("highlight-polygon", kind);
+      svg.appendChild(polygon);
+    };
+
     if (Array.isArray(region.polygons) && region.polygons.length > 0) {
       region.polygons.forEach((_, idx) => {
-        const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-        polygon.dataset.id = regionId;
-        polygon.dataset.part = String(idx);
-        polygon.dataset.type = "polygon";
-        polygon.classList.add("highlight-polygon", kind);
-        svg.appendChild(polygon);
+        appendPolygon(idx);
       });
       return;
     }
 
     if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
-      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      polygon.dataset.id = regionId;
-      polygon.dataset.type = "polygon";
-      polygon.classList.add("highlight-polygon", kind);
-      svg.appendChild(polygon);
-      return;
-    }
-
-    if (kind === "visual") {
-      // Visual detections are polygon-only; do not fallback to bbox.
+      appendPolygon(0);
       return;
     }
 
@@ -869,6 +931,11 @@ function updateHighlightPositions() {
   const offsetY = rect.top - containerRect.top;
   const scaleX = rect.width / imageNaturalWidth;
   const scaleY = rect.height / imageNaturalHeight;
+  const currentImageUrl = mainImage.currentSrc || mainImage.getAttribute("src") || slide.image_url || "";
+  const escapedImageUrl = currentImageUrl.replace(/(["\\])/g, "\\$1");
+  const liftBackgroundImage = currentImageUrl ? `url("${escapedImageUrl}")` : "none";
+  const liftBackgroundSize = `${rect.width}px ${rect.height}px`;
+  const liftBackgroundPosition = `${offsetX}px ${offsetY}px`;
 
   const regions = Array.isArray(slide.regions) ? slide.regions : [];
   const clusters = Array.isArray(slide.clusters) ? slide.clusters : [];
@@ -879,64 +946,85 @@ function updateHighlightPositions() {
       return;
     }
 
+    if (region.kind === "visual") {
+      const visualLayers = highlightOverlay.querySelectorAll(
+        `.highlight-lift[data-id="${region.id}"], .highlight-lift-underlay[data-id="${region.id}"]`
+      );
+      if (!visualLayers.length) {
+        return;
+      }
+
+      const applyLiftPolygon = (layerEl, poly) => {
+        const scaled = mapScaledPolygon(poly, offsetX, offsetY, scaleX, scaleY);
+        if (scaled.length < 3) {
+          layerEl.style.display = "none";
+          layerEl.style.clipPath = "none";
+          layerEl.style.webkitClipPath = "none";
+          if (layerEl.classList.contains("highlight-lift")) {
+            layerEl.style.backgroundImage = "none";
+          }
+          return;
+        }
+
+        layerEl.style.display = "";
+        if (layerEl.classList.contains("highlight-lift")) {
+          layerEl.style.backgroundImage = liftBackgroundImage;
+          layerEl.style.backgroundSize = liftBackgroundSize;
+          layerEl.style.backgroundPosition = liftBackgroundPosition;
+        }
+
+        const cssPolygon = `polygon(${toCssPolygonPoints(scaled)})`;
+        layerEl.style.clipPath = cssPolygon;
+        layerEl.style.webkitClipPath = cssPolygon;
+      };
+
+      if (Array.isArray(region.polygons) && region.polygons.length > 0) {
+        visualLayers.forEach((layerEl) => {
+          const idx = Number.parseInt(layerEl.dataset.part || "0", 10);
+          const poly = region.polygons[idx];
+          applyLiftPolygon(layerEl, poly);
+        });
+        return;
+      }
+
+      if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
+        visualLayers.forEach((layerEl) => {
+          applyLiftPolygon(layerEl, region.polygon);
+        });
+      }
+      // Visual detections stay polygon-only on position updates too.
+      return;
+    }
+
     if (Array.isArray(region.polygons) && region.polygons.length > 0) {
       const parts = highlightOverlay.querySelectorAll(`polygon[data-id="${region.id}"]`);
       parts.forEach((part) => {
         const idx = Number.parseInt(part.dataset.part || "0", 10);
-        const poly = region.polygons[idx];
-        if (!Array.isArray(poly)) {
+        const scaled = mapScaledPolygon(region.polygons[idx], offsetX, offsetY, scaleX, scaleY);
+        if (scaled.length < 3) {
           return;
         }
-        const points = poly
-          .map((pt) => {
-            if (!Array.isArray(pt) || pt.length < 2) {
-              return null;
-            }
-            const x = Number(pt[0]);
-            const y = Number(pt[1]);
-            if (!Number.isFinite(x) || !Number.isFinite(y)) {
-              return null;
-            }
-            return `${offsetX + x * scaleX},${offsetY + y * scaleY}`;
-          })
-          .filter((p) => p)
-          .join(" ");
-        if (points) {
-          part.setAttribute("points", points);
-          updatePolygonMetrics(part);
-        }
+        const points = toSvgPolygonPoints(scaled);
+        part.setAttribute("points", points);
+        updatePolygonMetrics(part);
       });
       return;
     }
 
     if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
-      const polygonEl = highlightOverlay.querySelector(`polygon[data-id="${region.id}"]`);
-      if (!polygonEl) {
+      const polygonEls = highlightOverlay.querySelectorAll(`polygon[data-id="${region.id}"]`);
+      if (!polygonEls.length) {
         return;
       }
-      const points = region.polygon
-        .map((pt) => {
-          if (!Array.isArray(pt) || pt.length < 2) {
-            return null;
-          }
-          const x = Number(pt[0]);
-          const y = Number(pt[1]);
-          if (!Number.isFinite(x) || !Number.isFinite(y)) {
-            return null;
-          }
-          return `${offsetX + x * scaleX},${offsetY + y * scaleY}`;
-        })
-        .filter((p) => p)
-        .join(" ");
-      if (points) {
+      const scaled = mapScaledPolygon(region.polygon, offsetX, offsetY, scaleX, scaleY);
+      if (scaled.length < 3) {
+        return;
+      }
+      const points = toSvgPolygonPoints(scaled);
+      polygonEls.forEach((polygonEl) => {
         polygonEl.setAttribute("points", points);
         updatePolygonMetrics(polygonEl);
-      }
-      return;
-    }
-
-    if (region.kind === "visual") {
-      // Visual detections stay polygon-only on position updates too.
+      });
       return;
     }
 

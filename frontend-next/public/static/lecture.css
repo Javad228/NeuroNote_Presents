@@ -307,11 +307,6 @@ a {
   stroke: rgba(255, 200, 0, 1);
 }
 
-.highlight-polygon.visual {
-  fill: rgba(0, 200, 255, 0.26);
-  stroke: rgba(0, 200, 255, 1);
-}
-
 .highlight-polygon.active {
   opacity: 1;
   fill-opacity: 1;
@@ -324,8 +319,61 @@ a {
   filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.7));
 }
 
-.highlight-polygon.visual.active {
-  filter: drop-shadow(0 0 8px rgba(0, 200, 255, 0.75));
+.highlight-lift-underlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(7, 12, 20, 0);
+  transition:
+    opacity 0.2s ease,
+    background-color 0.3s ease;
+}
+
+.highlight-lift-underlay.visual.active {
+  opacity: 1;
+  background: rgba(3, 6, 12, 0.52);
+}
+
+.highlight-lift {
+  --lift-dx: 0px;
+  --lift-dy: -3px;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
+  background-repeat: no-repeat;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, filter, opacity;
+  transition:
+    opacity 0.2s ease,
+    transform 0.34s ease,
+    filter 0.34s ease;
+}
+
+.highlight-lift::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: rgba(255, 229, 132, 0.2);
+  transition: opacity 0.34s ease;
+}
+
+.highlight-lift.visual.active {
+  opacity: 1;
+  transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  filter:
+    brightness(1.06) saturate(1.05) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.96)) drop-shadow(0 11px 17px rgba(4, 26, 40, 0.35)) drop-shadow(0 0 10px rgba(0, 208, 255, 0.34));
+  animation: liftPulse 2.4s ease-in-out infinite;
+}
+
+.highlight-lift.visual.active::after {
+  opacity: 1;
 }
 
 .highlight-polygon.entering {
@@ -343,10 +391,12 @@ a {
     fill-opacity: 0;
     stroke-dashoffset: var(--poly-len, 240);
   }
+
   45% {
     fill-opacity: 0;
     stroke-dashoffset: 0;
   }
+
   100% {
     fill-opacity: 1;
     stroke-dashoffset: 0;
@@ -358,6 +408,7 @@ a {
     opacity: 1;
     fill-opacity: 1;
   }
+
   100% {
     opacity: 0;
     fill-opacity: 0;
@@ -365,20 +416,35 @@ a {
 }
 
 @keyframes polygonPulse {
+
   0%,
   100% {
     stroke-width: 3;
   }
+
   50% {
     stroke-width: 5;
   }
 }
 
+@keyframes liftPulse {
+  0%,
+  100% {
+    transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  }
+
+  50% {
+    transform: translate3d(var(--lift-dx), calc(var(--lift-dy) - 1px), 0);
+  }
+}
+
 @keyframes boxPulse {
+
   0%,
   100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.02);
   }
@@ -389,10 +455,12 @@ a {
     opacity: 0.1;
     transform: scale(0.98);
   }
+
   45% {
     opacity: 1;
     transform: scale(1);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -403,6 +471,7 @@ a {
   0% {
     opacity: 1;
   }
+
   100% {
     opacity: 0;
   }

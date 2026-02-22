@@ -8,7 +8,7 @@ export default function LecturePage() {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>LecturAI - Lecture View</title>
-        <link rel="stylesheet" href="/static/lecture.css?v=19" />
+        <link rel="stylesheet" href="/static/lecture.css?v=23" />
       </Head>
 
       <div className="lecture-shell">
@@ -123,7 +123,7 @@ export default function LecturePage() {
         </footer>
       </div>
 
-      <Script src="/static/lecture.js?v=20" strategy="afterInteractive" />
+      <Script src="/static/lecture.js?v=23" strategy="afterInteractive" />
     </>
   );
 }
