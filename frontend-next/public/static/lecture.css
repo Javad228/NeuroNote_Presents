@@ -307,6 +307,11 @@ a {
   stroke: rgba(255, 200, 0, 1);
 }
 
+.highlight-polygon.visual {
+  fill: transparent;
+  stroke: rgba(220, 38, 38, 0.92);
+}
+
 .highlight-polygon.active {
   opacity: 1;
   fill-opacity: 1;
@@ -317,6 +322,13 @@ a {
 
 .highlight-polygon.text.active {
   filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.7));
+}
+
+.highlight-polygon.visual.active {
+  fill-opacity: 0;
+  stroke-width: 2.5;
+  animation: none;
+  filter: drop-shadow(0 0 2px rgba(220, 38, 38, 0.5));
 }
 
 .highlight-lift-underlay {
@@ -368,7 +380,14 @@ a {
   opacity: 1;
   transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
   filter:
-    brightness(1.06) saturate(1.05) drop-shadow(0 1px 0 rgba(255, 255, 255, 0.96)) drop-shadow(0 11px 17px rgba(4, 26, 40, 0.35)) drop-shadow(0 0 10px rgba(0, 208, 255, 0.34));
+    brightness(1.06) saturate(1.05)
+    drop-shadow(1px 0 0 rgba(220, 38, 38, 0.72))
+    drop-shadow(-1px 0 0 rgba(220, 38, 38, 0.72))
+    drop-shadow(0 1px 0 rgba(220, 38, 38, 0.72))
+    drop-shadow(0 -1px 0 rgba(220, 38, 38, 0.72))
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.96))
+    drop-shadow(0 11px 17px rgba(4, 26, 40, 0.35))
+    drop-shadow(0 0 10px rgba(0, 208, 255, 0.34));
   animation: liftPulse 2.4s ease-in-out infinite;
 }
 
