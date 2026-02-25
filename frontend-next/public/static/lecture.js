@@ -20,6 +20,8 @@ const nextSlideBtn = document.getElementById("nextSlideBtn");
 const rateLabel = document.getElementById("rateLabel");
 const speedRange = document.getElementById("speedRange");
 const tabButtons = Array.from(document.querySelectorAll(".lecture-tab"));
+const lectureShell = document.querySelector(".lecture-shell");
+const timelineRail = document.getElementById("timelineRail");
 
 const state = {
   jobId: "",
@@ -40,11 +42,144 @@ const state = {
   totalTimelineMs: 0,
   lectureRefreshTimer: null,
   lectureRefreshInFlight: false,
+  timelineScrubPointerId: null,
 };
 
 function getJobIdFromPath() {
   const parts = window.location.pathname.split("/").filter(Boolean);
   return parts.length >= 2 ? decodeURIComponent(parts[1]) : "";
+}
+
+function sanitizeLectureTitle(rawTitle, jobId = "") {
+  const value = typeof rawTitle === "string" ? rawTitle.trim() : "";
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.toLowerCase();
+  const normalizedJobId = String(jobId || "").trim().toLowerCase();
+  if (normalizedJobId) {
+    if (normalized === normalizedJobId || normalized === `lecture ${normalizedJobId}`) {
+      return "";
+    }
+  }
+
+  if (/^lecture\s+[a-f0-9-]{6,}$/i.test(value)) {
+    return "";
+  }
+
+  return value;
+}
+
+function getDisplayLectureTitle() {
+  return sanitizeLectureTitle(state.lecture?.title, state.jobId);
+}
+
+function clamp01(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function getPlaybackProgressRatio() {
+  if (hasNarrationAudio() && Number.isFinite(state.narrationAudio.duration) && state.narrationAudio.duration > 0) {
+    return clamp01(state.narrationAudio.currentTime / state.narrationAudio.duration);
+  }
+
+  if (state.totalTimelineMs > 0) {
+    return clamp01(getCurrentGlobalMs() / state.totalTimelineMs);
+  }
+
+  const slides = state.lecture?.slides || [];
+  if (slides.length <= 1) {
+    return 0;
+  }
+  return clamp01(state.currentSlideIndex / (slides.length - 1));
+}
+
+function updatePlaybackVisuals() {
+  const progress = getPlaybackProgressRatio();
+  const pct = `${(progress * 100).toFixed(2)}%`;
+
+  if (lectureShell) {
+    lectureShell.style.setProperty("--playback-progress", String(progress));
+    lectureShell.style.setProperty("--playback-progress-pct", pct);
+  }
+
+  if (timelineRail) {
+    timelineRail.style.setProperty("--timeline-progress", String(progress));
+    timelineRail.style.setProperty("--timeline-progress-pct", pct);
+  }
+}
+
+function ensureActiveTimelineThumbVisible() {
+  const activeThumb = dotsTrack.querySelector(".slide-dot-active");
+  if (!activeThumb) {
+    return;
+  }
+
+  try {
+    activeThumb.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  } catch {
+    activeThumb.scrollIntoView();
+  }
+}
+
+function pausePlaybackForManualNavigation() {
+  if (hasNarrationAudio() && state.isPlaying) {
+    state.narrationAudio.pause();
+  }
+  setPlaying(false);
+}
+
+function scrubToTimelineProgress(progressRatio) {
+  const slides = state.lecture?.slides || [];
+  if (!slides.length) {
+    return;
+  }
+
+  const progress = clamp01(progressRatio);
+  const maxTimelineMs = hasNarrationAudio() && Number.isFinite(state.narrationAudio.duration) && state.narrationAudio.duration > 0
+    ? state.narrationAudio.duration * 1000
+    : state.totalTimelineMs;
+
+  if (maxTimelineMs > 0) {
+    const location = locateTimelinePosition(progress * maxTimelineMs);
+    if (location) {
+      const slideChanged = location.slideIndex !== state.currentSlideIndex;
+      if (slideChanged) {
+        goToSlide(location.slideIndex);
+      }
+      if (location.stepIndex !== state.currentStepIndex || slideChanged) {
+        goToStep(location.stepIndex);
+      }
+      seekAudioToCurrentUiPosition();
+      updatePlaybackVisuals();
+      return;
+    }
+  }
+
+  const targetSlideIndex = Math.round(progress * Math.max(0, slides.length - 1));
+  goToSlide(targetSlideIndex);
+  seekAudioToCurrentUiPosition();
+  updatePlaybackVisuals();
+}
+
+function getTimelineRailProgressFromClientX(clientX) {
+  if (!timelineRail) {
+    return 0;
+  }
+  const rect = timelineRail.getBoundingClientRect();
+  if (!rect.width) {
+    return 0;
+  }
+  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  return x / rect.width;
 }
 
 function getCurrentSlide() {
@@ -320,6 +455,9 @@ function clearPlaybackTimer() {
 
 function setPlaying(next) {
   state.isPlaying = next;
+  if (lectureShell) {
+    lectureShell.classList.toggle("is-playing", next);
+  }
   playBtn.textContent = next ? "\u23f8" : "\u25b6";
   playBtn.setAttribute("aria-label", next ? "Pause script" : "Play script");
   if (next && hasNarrationAudio() && !state.audioSyncInterval) {
@@ -336,6 +474,7 @@ function setPlaying(next) {
       state.audioSyncInterval = null;
     }
   }
+  updatePlaybackVisuals();
 }
 
 function hasNarrationAudio() {
@@ -799,7 +938,11 @@ function updateMeta() {
   } else {
     trackTime.textContent = `${formatClock(startMs)} / ${formatClock(totalMs)}`;
   }
-  trackTitle.textContent = `${state.lecture.title} • Slide ${slide.slide_number}`;
+  const displayLectureTitle = getDisplayLectureTitle();
+  trackTitle.textContent = displayLectureTitle
+    ? `${displayLectureTitle} • Slide ${slide.slide_number}`
+    : `Slide ${slide.slide_number}`;
+  updatePlaybackVisuals();
 }
 
 function createHighlightBoxes() {
@@ -1211,9 +1354,39 @@ function renderDots() {
     dot.type = "button";
     dot.className = `slide-dot${idx === state.currentSlideIndex ? " slide-dot-active" : ""}`;
     dot.dataset.slideIndex = String(idx);
-    dot.title = `Slide ${slide.slide_number}`;
+    const slideNumber = Number.isFinite(Number(slide?.slide_number)) ? Number(slide.slide_number) : idx + 1;
+    dot.title = `Slide ${slideNumber}`;
+    dot.setAttribute("aria-label", `Go to slide ${slideNumber}`);
+
+    const thumb = document.createElement("span");
+    thumb.className = "slide-dot-thumb";
+    const thumbUrl =
+      (typeof slide?.thumbnail_url === "string" && slide.thumbnail_url) ||
+      (typeof slide?.image_url === "string" && slide.image_url) ||
+      "";
+
+    if (thumbUrl) {
+      const img = document.createElement("img");
+      img.src = thumbUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      thumb.appendChild(img);
+    } else {
+      thumb.classList.add("slide-dot-thumb-fallback");
+      thumb.textContent = String(slideNumber);
+    }
+
+    const label = document.createElement("span");
+    label.className = "slide-dot-label";
+    label.textContent = String(slideNumber);
+
+    dot.appendChild(thumb);
+    dot.appendChild(label);
     dotsTrack.appendChild(dot);
   });
+  ensureActiveTimelineThumbVisible();
+  updatePlaybackVisuals();
 }
 
 function renderSlideImage() {
@@ -1340,7 +1513,7 @@ async function loadLecture() {
     return;
   }
 
-  lectureSubhead.textContent = `JOB ${jobId}`;
+  lectureSubhead.textContent = "MODULE 1";
 
   try {
     const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/lecture`);
@@ -1352,12 +1525,14 @@ async function loadLecture() {
     await applyLecturePayload(payload, { preservePosition: false });
     ensureLectureRefreshPolling();
 
-    lectureTitle.textContent = payload.title || jobId;
-    lectureSubhead.textContent = `MODULE 1 • JOB ${jobId}`;
+    const displayTitle = sanitizeLectureTitle(payload.title, jobId);
+    lectureTitle.textContent = displayTitle || "Lecture";
+    const slideCount = Array.isArray(payload.slides) ? payload.slides.length : 0;
+    lectureSubhead.textContent = slideCount > 0 ? `MODULE 1 • ${slideCount} SLIDES` : "MODULE 1";
     downloadPdfBtn.href = payload.input_pdf_url || "#";
   } catch (error) {
     lectureTitle.textContent = "Failed to load lecture";
-    lectureSubhead.textContent = `JOB ${jobId}`;
+    lectureSubhead.textContent = "MODULE 1";
     slideMessage.textContent = error.message || "Unable to load lecture payload.";
     slideMessage.style.display = "block";
   }
@@ -1379,10 +1554,7 @@ scriptPanel.addEventListener("click", (event) => {
     return;
   }
   const next = Number.parseInt(row.dataset.stepIndex || "0", 10);
-  if (hasNarrationAudio() && state.isPlaying) {
-    state.narrationAudio.pause();
-  }
-  setPlaying(false);
+  pausePlaybackForManualNavigation();
   goToStep(Number.isNaN(next) ? 0 : next);
   seekAudioToCurrentUiPosition();
 });
@@ -1407,28 +1579,69 @@ dotsTrack.addEventListener("click", (event) => {
     return;
   }
   const next = Number.parseInt(dot.dataset.slideIndex || "0", 10);
-  if (hasNarrationAudio() && state.isPlaying) {
-    state.narrationAudio.pause();
-  }
-  setPlaying(false);
+  pausePlaybackForManualNavigation();
   goToSlide(Number.isNaN(next) ? 0 : next);
   seekAudioToCurrentUiPosition();
 });
 
+if (timelineRail) {
+  const endTimelineScrub = (event) => {
+    if (state.timelineScrubPointerId == null) {
+      return;
+    }
+    if (event && event.pointerId !== state.timelineScrubPointerId) {
+      return;
+    }
+    try {
+      if (event && timelineRail.hasPointerCapture?.(state.timelineScrubPointerId)) {
+        timelineRail.releasePointerCapture(state.timelineScrubPointerId);
+      }
+    } catch {
+      // Ignore release failures on synthetic/cancelled pointer states.
+    }
+    state.timelineScrubPointerId = null;
+  };
+
+  timelineRail.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    if (event.target.closest(".slide-dot")) {
+      return;
+    }
+    event.preventDefault();
+    pausePlaybackForManualNavigation();
+    state.timelineScrubPointerId = event.pointerId;
+    try {
+      timelineRail.setPointerCapture(event.pointerId);
+    } catch {
+      // Capture may fail on some browsers; scrubbing still works on pointerdown.
+    }
+    scrubToTimelineProgress(getTimelineRailProgressFromClientX(event.clientX));
+  });
+
+  timelineRail.addEventListener("pointermove", (event) => {
+    if (state.timelineScrubPointerId == null || event.pointerId !== state.timelineScrubPointerId) {
+      return;
+    }
+    scrubToTimelineProgress(getTimelineRailProgressFromClientX(event.clientX));
+  });
+
+  timelineRail.addEventListener("pointerup", endTimelineScrub);
+  timelineRail.addEventListener("pointercancel", endTimelineScrub);
+  timelineRail.addEventListener("lostpointercapture", () => {
+    state.timelineScrubPointerId = null;
+  });
+}
+
 prevSlideBtn.addEventListener("click", () => {
-  if (hasNarrationAudio() && state.isPlaying) {
-    state.narrationAudio.pause();
-  }
-  setPlaying(false);
+  pausePlaybackForManualNavigation();
   goToSlide(state.currentSlideIndex - 1);
   seekAudioToCurrentUiPosition();
 });
 
 nextSlideBtn.addEventListener("click", () => {
-  if (hasNarrationAudio() && state.isPlaying) {
-    state.narrationAudio.pause();
-  }
-  setPlaying(false);
+  pausePlaybackForManualNavigation();
   goToSlide(state.currentSlideIndex + 1);
   seekAudioToCurrentUiPosition();
 });

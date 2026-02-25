@@ -9,21 +9,30 @@ export default function NewProjectPage() {
       <Head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>LecturAI - New Project</title>
+        <title>NeuroNote - New Project</title>
         <link rel="stylesheet" href="/static/new-project.css" />
       </Head>
 
       <div className="np-shell">
+        <div className="np-ambient np-ambient-a" aria-hidden="true" />
+        <div className="np-ambient np-ambient-b" aria-hidden="true" />
+
         <header className="np-topbar">
+          <div className="np-window-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+
           <div className="np-brand">
             <div className="np-brand-logo">NN</div>
-            <div className="np-brand-text">LecturAI</div>
-            <span className="np-beta">Beta</span>
+            <div className="np-brand-text">NeuroNote</div>
+            <span className="np-beta">Studio</span>
           </div>
 
           <nav className="np-nav" aria-label="Primary">
             <a href="/" className="np-nav-link">
-              My Lectures
+              My Projects
             </a>
             <a href="/new-project" className="np-nav-link np-nav-link-active">
               New Project
@@ -39,19 +48,25 @@ export default function NewProjectPage() {
         </header>
 
         <main className="np-main">
-          <section className="np-left">
+          <section className="np-left np-panel">
             <div className="np-section-title-wrap">
-              <h1 className="np-section-title">1. Upload slides</h1>
-              <p className="np-section-subtitle">Upload your presentation deck to get started.</p>
+              <span className="np-step-pill">Step 1</span>
+              <h1 className="np-section-title">Upload slides</h1>
+              <p className="np-section-subtitle">Upload your presentation deck to start building the lecture.</p>
+              <div className="np-mini-chips" aria-hidden="true">
+                <span className="np-mini-chip">PDF pipeline</span>
+                <span className="np-mini-chip">Local processing</span>
+              </div>
             </div>
 
             <div id="dropzone" className="np-dropzone" role="button" tabIndex={0} aria-label="Upload PDF file">
+              <div className="np-dropzone-gloss" aria-hidden="true" />
               <div className="np-upload-icon">&#9729;</div>
               <p className="np-drop-main">Drag &amp; drop your file here</p>
               <p className="np-drop-sub">
                 or <span>browse from your computer</span>
               </p>
-              <p className="np-drop-hint">Supports .pdf, .pptx (Max 50MB)</p>
+              <p className="np-drop-hint">Supports .pdf (Max 50MB)</p>
               <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden />
             </div>
 
@@ -79,10 +94,15 @@ export default function NewProjectPage() {
             </section>
           </section>
 
-          <section className="np-right">
+          <section className="np-right np-panel">
             <div className="np-section-title-wrap">
-              <h1 className="np-section-title">2. Select Voice</h1>
-              <p className="np-section-subtitle">Choose the persona for your AI lecturer.</p>
+              <span className="np-step-pill">Step 2</span>
+              <h1 className="np-section-title">Select Voice</h1>
+              <p className="np-section-subtitle">Choose the persona and pacing for your AI lecturer.</p>
+              <div className="np-mini-chips" aria-hidden="true">
+                <span className="np-mini-chip">3 presets</span>
+                <span className="np-mini-chip">Preview snippets</span>
+              </div>
             </div>
 
             <div id="voiceList" className="np-voice-list" role="radiogroup" aria-label="Voice selection">
@@ -145,7 +165,7 @@ export default function NewProjectPage() {
         </main>
 
         <footer className="np-footer">
-          <span>&copy; 2023 LecturAI Inc.</span>
+          <span>&copy; 2026 NeuroNote</span>
           <div className="np-footer-links">
             <button type="button" id="helpBtn">
               Help

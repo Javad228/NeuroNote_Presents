@@ -12,7 +12,16 @@ export default function DashboardPage() {
       </Head>
 
       <div className="app-shell">
+        <div className="ambient-orb ambient-orb-a" aria-hidden="true" />
+        <div className="ambient-orb ambient-orb-b" aria-hidden="true" />
+
         <aside className="sidebar">
+          <div className="window-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+
           <div className="brand-row">
             <div className="brand-logo">NN</div>
             <div className="brand-text">NeuroNote</div>
@@ -53,28 +62,52 @@ export default function DashboardPage() {
         </aside>
 
         <main className="main-panel">
-          <header className="topbar">
-            <div>
-              <h1>Dashboard</h1>
-              <p className="subhead">overview</p>
-            </div>
+          <section className="hero-card" aria-label="Dashboard overview">
+            <header className="topbar">
+              <div className="topbar-copy">
+                <p className="eyebrow">Workspace</p>
+                <h1>Dashboard</h1>
+                <p className="subhead">overview</p>
+              </div>
 
-            <div className="topbar-actions">
-              <input
-                id="searchInput"
-                className="search-input"
-                type="text"
-                placeholder="Search projects..."
-              />
-              <button id="newProjectBtn" className="new-project-btn" type="button">
-                + New Project
-              </button>
+              <div className="topbar-actions">
+                <input
+                  id="searchInput"
+                  className="search-input"
+                  type="text"
+                  placeholder="Search projects..."
+                />
+                <button id="newProjectBtn" className="new-project-btn" type="button">
+                  + New Project
+                </button>
+              </div>
+            </header>
+
+            <div className="hero-metrics" aria-hidden="true">
+              <div className="hero-metric">
+                <span>Pipeline</span>
+                <strong>Ready</strong>
+              </div>
+              <div className="hero-metric">
+                <span>Rendering</span>
+                <strong>Local</strong>
+              </div>
+              <div className="hero-metric">
+                <span>Theme</span>
+                <strong>Glass</strong>
+              </div>
             </div>
-          </header>
+          </section>
 
           <section className="content-section">
             <div className="section-header">
-              <h2>Recent Jobs</h2>
+              <div>
+                <p className="eyebrow">Library</p>
+                <h2>Recent Jobs</h2>
+              </div>
+              <div className="section-chip" aria-hidden="true">
+                Local cache
+              </div>
             </div>
 
             <p id="status" className="status-text">
