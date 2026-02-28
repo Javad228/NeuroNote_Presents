@@ -6,3 +6,5 @@ pymupdf
 azure-ai-documentintelligence
 python-dotenv
 google-cloud-storage
+openai
+rank-bm25

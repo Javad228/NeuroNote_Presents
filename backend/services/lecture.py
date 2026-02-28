@@ -89,6 +89,59 @@ class LectureService:
         return None
 
     @staticmethod
+    def _extract_visual_plan_by_step(debug_payload: dict[str, Any] | None) -> dict[int, dict[str, str]]:
+        if not isinstance(debug_payload, dict):
+            return {}
+        raw_steps: Any = None
+
+        response_payload = debug_payload.get("visual_traversal_candidate_plan_response")
+        if isinstance(response_payload, dict) and isinstance(response_payload.get("steps"), list):
+            raw_steps = response_payload.get("steps")
+
+        if raw_steps is None:
+            raw_response = debug_payload.get("visual_traversal_candidate_plan_raw_response")
+            if isinstance(raw_response, str) and raw_response.strip():
+                try:
+                    parsed = json.loads(raw_response)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict) and isinstance(parsed.get("steps"), list):
+                    raw_steps = parsed.get("steps")
+
+        if not isinstance(raw_steps, list):
+            return {}
+
+        out: dict[int, dict[str, str]] = {}
+        for item in raw_steps:
+            if not isinstance(item, dict):
+                continue
+            try:
+                step_number = int(item.get("step_number"))
+            except Exception:
+                continue
+            if step_number <= 0:
+                continue
+            what = item.get("what")
+            description = item.get("description_of_how_it_looks")
+            entry: dict[str, str] = {}
+            if isinstance(what, str) and what.strip():
+                entry["what"] = what.strip()
+            if isinstance(description, str) and description.strip():
+                entry["description_of_how_it_looks"] = description.strip()
+            if entry:
+                out[step_number] = entry
+        return out
+
+    def _resolve_sibling_artifact(self, artifact_url: Any, sibling_filename: str) -> Path | None:
+        if not isinstance(artifact_url, str) or not artifact_url.strip():
+            return None
+        try:
+            sibling_url = str(Path(artifact_url).with_name(sibling_filename))
+        except Exception:
+            return None
+        return self._resolve_neuronote_artifact(sibling_url)
+
+    @staticmethod
     def _normalize_bbox(raw: Any) -> list[float] | None:
         if not isinstance(raw, list) or len(raw) != 4:
             return None
@@ -230,13 +283,18 @@ class LectureService:
         }
 
     @staticmethod
-    def _extract_steps(script_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    def _extract_steps(
+        script_payload: dict[str, Any] | None,
+        *,
+        debug_payload: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         if not isinstance(script_payload, dict):
             return []
         raw_steps = script_payload.get("steps")
         if not isinstance(raw_steps, list):
             return []
 
+        visual_plan_by_step = LectureService._extract_visual_plan_by_step(debug_payload)
         steps: list[dict[str, Any]] = []
         elapsed = 0
         for idx, step in enumerate(raw_steps, start=1):
@@ -251,20 +309,38 @@ class LectureService:
             if not isinstance(dwell_ms, int) or dwell_ms <= 0:
                 dwell_ms = 3500
 
+            try:
+                step_number = int(step.get("step_number"))
+            except Exception:
+                step_number = idx
+            if step_number <= 0:
+                step_number = idx
+
             region_ids = step.get("region_ids")
             if not isinstance(region_ids, list):
                 region_ids = []
 
-            steps.append(
-                {
-                    "step_id": str(step.get("step_id") or f"s{idx}"),
-                    "line": line.strip(),
-                    "region_ids": [str(v) for v in region_ids if isinstance(v, str)],
-                    "dwell_ms": dwell_ms,
-                    "start_ms": elapsed,
-                    "step_number": idx,
-                }
-            )
+            what = step.get("what")
+            description = step.get("description_of_how_it_looks")
+            if not (isinstance(what, str) and what.strip()):
+                what = (visual_plan_by_step.get(step_number) or {}).get("what")
+            if not (isinstance(description, str) and description.strip()):
+                description = (visual_plan_by_step.get(step_number) or {}).get("description_of_how_it_looks")
+
+            step_row: dict[str, Any] = {
+                "step_id": str(step.get("step_id") or f"s{idx}"),
+                "line": line.strip(),
+                "region_ids": [str(v) for v in region_ids if isinstance(v, str)],
+                "dwell_ms": dwell_ms,
+                "start_ms": elapsed,
+                "step_number": step_number,
+            }
+            if isinstance(what, str) and what.strip():
+                step_row["what"] = what.strip()
+            if isinstance(description, str) and description.strip():
+                step_row["description_of_how_it_looks"] = description.strip()
+
+            steps.append(step_row)
             elapsed += dwell_ms
 
         return steps
@@ -377,7 +453,12 @@ class LectureService:
             return None
         return candidate
 
-    def get_lecture_payload(self, job_id: str) -> dict[str, Any] | None:
+    def get_lecture_payload(
+        self,
+        job_id: str,
+        *,
+        ensure_rendered_steps: bool = True,
+    ) -> dict[str, Any] | None:
         job_dir = self.jobs_service.resolve_job_dir(job_id)
         if job_dir is None:
             return None
@@ -406,6 +487,10 @@ class LectureService:
             for chunk in neuronote_chunks:
                 if not isinstance(chunk, dict):
                     continue
+                chunk_id = chunk.get("chunk_id")
+                chunk_id_str = str(chunk_id).strip() if isinstance(chunk_id, str) else None
+                if chunk_id_str == "":
+                    chunk_id_str = None
                 neuronote = chunk.get("neuronote")
                 if not isinstance(neuronote, dict):
                     continue
@@ -443,23 +528,30 @@ class LectureService:
                     script_payload = self._read_json(
                         self._resolve_neuronote_artifact(image.get("script_url"))
                     )
+                    debug_prompts_payload = self._read_json(
+                        self._resolve_sibling_artifact(image.get("script_url"), "debug_prompts.json")
+                    )
                     regions_payload = self._read_json(
                         self._resolve_neuronote_artifact(image.get("regions_url"))
                     )
-                    steps = self._extract_steps(script_payload)
+                    steps = self._extract_steps(script_payload, debug_payload=debug_prompts_payload)
                     region_payload = self._extract_region_payload(regions_payload)
-                    rendered_step_urls = self.ensure_rendered_step_images(
-                        job_id=job_id,
-                        image_name=local_image_name,
-                        steps=steps,
-                        regions=region_payload["regions"],
-                        clusters=region_payload["clusters"],
-                        groups=region_payload["groups"],
-                    )
+                    rendered_step_urls: list[str] = []
+                    if ensure_rendered_steps:
+                        rendered_step_urls = self.ensure_rendered_step_images(
+                            job_id=job_id,
+                            image_name=local_image_name,
+                            steps=steps,
+                            regions=region_payload["regions"],
+                            clusters=region_payload["clusters"],
+                            groups=region_payload["groups"],
+                        )
 
                     slides.append(
                         {
                             "slide_number": slide_number,
+                            "slide_id": local_image_name,
+                            "chunk_id": chunk_id_str,
                             "image_name": local_image_name,
                             "image_url": f"/api/jobs/{job_id}/slides/{slide_file}",
                             "script_title": script_payload.get("title") if isinstance(script_payload, dict) else None,
@@ -484,6 +576,8 @@ class LectureService:
                     slides.append(
                         {
                             "slide_number": int(match.group(1)),
+                            "slide_id": slide_path.stem,
+                            "chunk_id": None,
                             "image_name": slide_path.stem,
                             "image_url": f"/api/jobs/{job_id}/slides/{slide_path.name}",
                             "script_title": None,

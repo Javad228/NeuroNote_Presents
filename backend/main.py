@@ -10,9 +10,18 @@ from fastapi.staticfiles import StaticFiles
 from .api.routes import router
 from .config import get_config
 
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+_DEV_LOOPBACK_ORIGIN_REGEX = r"^https?://(?:(?:localhost)|(?:127\.0\.0\.1)|(?:\[::1\]))(?::\d+)?$"
+
+if callable(load_dotenv):
+    load_dotenv(BASE_DIR / ".env", override=False)
 
 
 def configure_logging() -> None:
@@ -53,6 +62,9 @@ def create_app() -> FastAPI:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=config.cors_allow_origins,
+            # Accept common loopback aliases in local dev even when CORS_ALLOW_ORIGINS
+            # is set to only one hostname variant (e.g. localhost vs 127.0.0.1).
+            allow_origin_regex=_DEV_LOOPBACK_ORIGIN_REGEX,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

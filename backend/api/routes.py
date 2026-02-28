@@ -1,16 +1,27 @@
+import asyncio
+import contextlib
+import json
+import logging
+import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ..config import AppConfig, get_config
 from ..services.lecture import LectureService
 from ..services.jobs import JobsService
-from ..schemas import ProcessPdfOptions
+from ..schemas import ProcessPdfOptions, QaAnswerRequest, QaAnswerResponse
 from ..services.orchestrator import OrchestratorService
+from ..services.question_answering import QuestionAnsweringService
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.get("/healthz")
@@ -131,6 +142,123 @@ async def get_job_audio(
     }.get(audio_path.suffix.lower(), "application/octet-stream")
 
     return FileResponse(path=audio_path, filename=audio_path.name, media_type=media_type)
+
+
+@router.post("/api/jobs/{job_id}/qa/answer", response_model=QaAnswerResponse)
+async def answer_job_question(
+    job_id: str,
+    payload: QaAnswerRequest,
+    debug: bool = Query(False),
+    config: AppConfig = Depends(get_config),
+) -> dict[str, Any]:
+    service = QuestionAnsweringService(config)
+    try:
+        result = await service.answer_question(job_id=job_id, request=payload, debug=debug)
+        return QaAnswerResponse.model_validate(result).model_dump()
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("qa.answer_route_failed job_id=%s", job_id)
+        raise HTTPException(status_code=500, detail="QA response failed.") from None
+
+
+@router.post("/api/jobs/{job_id}/qa/answer/stream")
+async def answer_job_question_stream(
+    job_id: str,
+    payload: QaAnswerRequest,
+    request: Request,
+    debug: bool = Query(False),
+    config: AppConfig = Depends(get_config),
+) -> StreamingResponse:
+    service = QuestionAnsweringService(config)
+
+    async def stream_events() -> Any:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        result_holder: dict[str, Any] = {}
+        error_holder: dict[str, Any] = {}
+
+        async def progress_cb(event_payload: dict[str, Any]) -> None:
+            await queue.put({"event": "progress", "payload": event_payload})
+
+        async def run_answer() -> None:
+            try:
+                result = await service.answer_question(
+                    job_id=job_id,
+                    request=payload,
+                    debug=debug,
+                    progress_cb=progress_cb,
+                )
+                result_holder["result"] = QaAnswerResponse.model_validate(result).model_dump()
+            except HTTPException as exc:
+                error_holder["error"] = {"status_code": int(exc.status_code), "detail": str(exc.detail)}
+            except Exception:
+                logger.exception("qa.answer_stream_route_failed job_id=%s", job_id)
+                error_holder["error"] = {"status_code": 500, "detail": "QA response failed."}
+
+        worker = asyncio.create_task(run_answer())
+        try:
+            while True:
+                if await request.is_disconnected():
+                    worker.cancel()
+                    break
+
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.35)
+                    if isinstance(item, dict) and isinstance(item.get("event"), str) and isinstance(item.get("payload"), dict):
+                        yield _sse_event(str(item["event"]), item["payload"])
+                    continue
+                except asyncio.TimeoutError:
+                    pass
+
+                if worker.done():
+                    break
+                yield ": keep-alive\n\n"
+
+            while not queue.empty():
+                item = queue.get_nowait()
+                if isinstance(item, dict) and isinstance(item.get("event"), str) and isinstance(item.get("payload"), dict):
+                    yield _sse_event(str(item["event"]), item["payload"])
+
+            if "error" in error_holder and isinstance(error_holder["error"], dict):
+                yield _sse_event("error", error_holder["error"])
+                yield _sse_event("done", {"ok": False})
+                return
+
+            result = result_holder.get("result")
+            if isinstance(result, dict):
+                answer_text = result.get("answer_text")
+                if isinstance(answer_text, str) and answer_text.strip():
+                    # Emit answer in small word-like chunks with a short delay so the UI
+                    # can render visible incremental typing instead of a single burst.
+                    chunks = re.findall(r"\S+\s*|\n+", answer_text)
+                    if not chunks:
+                        chunks = [answer_text]
+                    for chunk in chunks:
+                        if not chunk:
+                            continue
+                        yield _sse_event("delta", {"text": chunk})
+                        await asyncio.sleep(0.02)
+                yield _sse_event("result", result)
+                yield _sse_event("done", {"ok": True})
+                return
+
+            yield _sse_event("error", {"status_code": 500, "detail": "No result was produced."})
+            yield _sse_event("done", {"ok": False})
+        finally:
+            if not worker.done():
+                worker.cancel()
+            with contextlib.suppress(Exception):
+                await worker
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/process-pdf")
