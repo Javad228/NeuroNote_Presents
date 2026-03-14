@@ -260,7 +260,7 @@ class OrchestratorService:
             ).strip()
             if not upstream_job_id:
                 raise RuntimeError(
-                    "NeuroNote /api/process-batch-gcs response is missing job_id/batch_id."
+                    "SlideParser /api/process-batch-gcs response is missing job_id/batch_id."
                 )
 
             poll_interval = max(0.2, self.config.neuronote_poll_interval_seconds)
@@ -286,7 +286,7 @@ class OrchestratorService:
                 error_detail,
             )
             raise RuntimeError(
-                f"NeuroNote batch job {status_payload.get('job_id', 'unknown')} "
+                f"SlideParser batch job {status_payload.get('job_id', 'unknown')} "
                 f"finished with status '{upstream_status or 'unknown'}': {error_detail}"
             )
 
@@ -302,6 +302,12 @@ class OrchestratorService:
         transcript_audio: dict[str, Any] = {
             "enabled": self.transcript_audio_service.enabled(),
             "status": "skipped",
+            "requested": {
+                "provider": options.tts_provider,
+                "model": options.tts_model,
+                "voice": options.tts_voice,
+                "elevenlabs_output_format": options.tts_elevenlabs_output_format,
+            },
         }
 
         final_result = {
@@ -353,12 +359,22 @@ class OrchestratorService:
                 audio_meta = await asyncio.to_thread(
                     self.transcript_audio_service.generate_for_job,
                     job_id,
+                    tts_provider=options.tts_provider,
+                    tts_model=options.tts_model,
+                    tts_voice=options.tts_voice,
+                    tts_elevenlabs_output_format=options.tts_elevenlabs_output_format,
                 )
                 audio_elapsed_s = time.perf_counter() - audio_started
                 transcript_audio = {
                     "enabled": True,
                     "status": "complete",
                     "elapsed_s": round(audio_elapsed_s, 3),
+                    "requested": {
+                        "provider": options.tts_provider,
+                        "model": options.tts_model,
+                        "voice": options.tts_voice,
+                        "elevenlabs_output_format": options.tts_elevenlabs_output_format,
+                    },
                     **audio_meta,
                 }
                 logger.info(
@@ -372,6 +388,12 @@ class OrchestratorService:
                 transcript_audio = {
                     "enabled": True,
                     "status": "error",
+                    "requested": {
+                        "provider": options.tts_provider,
+                        "model": options.tts_model,
+                        "voice": options.tts_voice,
+                        "elevenlabs_output_format": options.tts_elevenlabs_output_format,
+                    },
                     "error": str(exc),
                 }
                 if self.transcript_audio_service.fail_on_error():

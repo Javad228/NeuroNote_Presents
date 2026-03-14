@@ -1,0 +1,159 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+    --primary: 215 16.3% 46.9%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 215 20.2% 65.1%;
+    --radius: 0.5rem;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+  }
+
+  [data-theme="dark"] {
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 20% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --card: 222 47.4% 11.2%;
+    --card-foreground: 210 20% 98%;
+    --primary: 210 20% 98%;
+    --primary-foreground: 220.9 39.3% 11%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+    --ring: 216 12.2% 83.9%;
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* ── Lecture loading & entrance ── */
+
+@keyframes lec-logo-breathe {
+  0%, 100% { opacity: 0.6; transform: scale(1); filter: brightness(1); }
+  50%      { opacity: 1;   transform: scale(1.06); filter: brightness(1.15); }
+}
+
+@keyframes lec-bar-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes lec-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes lec-dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40%           { opacity: 1;    transform: scale(1); }
+}
+
+@keyframes lec-overlay-exit {
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+    filter: blur(8px);
+  }
+}
+
+@keyframes lec-reveal-up {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes lec-reveal-scale {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes lec-reveal-right {
+  from { opacity: 0; transform: translateX(32px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lec-reveal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.lec-loading-overlay {
+  background: hsl(var(--background));
+}
+
+.lec-loading-bar-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+}
+.lec-loading-bar-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.5), transparent);
+  animation: lec-bar-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.lec-loading-ring {
+  border: 2px solid hsl(var(--border));
+  border-top-color: hsl(var(--primary));
+  animation: lec-ring-spin 1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.lec-loading-dot {
+  animation: lec-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.lec-overlay-exit {
+  animation: lec-overlay-exit 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+.lec-reveal-header   { animation: lec-reveal-up    0.65s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 50ms; }
+.lec-reveal-slide    { animation: lec-reveal-scale  0.75s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 100ms; }
+.lec-reveal-timeline { animation: lec-reveal-fade   0.5s  cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 200ms; }
+.lec-reveal-controls { animation: lec-reveal-up     0.65s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 250ms; }
+.lec-reveal-meta     { animation: lec-reveal-up     0.55s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 300ms; }
+.lec-reveal-thumbs   { animation: lec-reveal-up     0.65s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 350ms; }
+.lec-reveal-sidebar  { animation: lec-reveal-right  0.75s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: 150ms; }

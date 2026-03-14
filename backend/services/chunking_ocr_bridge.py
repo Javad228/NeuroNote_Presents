@@ -9,7 +9,7 @@ def build_azure_ocr_extractor(
     azure_level: str,
     azure_min_conf: float,
 ) -> Callable[[Path], str]:
-    """Build an OCR extractor that uses NeuroNote's Azure OCR backend."""
+    """Build an OCR extractor that uses SlideParser's Azure OCR backend."""
     root_str = str(neuronote_pipeline_root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
@@ -18,7 +18,7 @@ def build_azure_ocr_extractor(
         from neuronote.extraction.ocr.dispatch import load_ocr_engine, run_ocr  # type: ignore
     except Exception as exc:
         raise RuntimeError(
-            "Failed to import NeuroNote OCR modules. "
+            "Failed to import SlideParser OCR modules. "
             f"Expected package under: {neuronote_pipeline_root}"
         ) from exc
 

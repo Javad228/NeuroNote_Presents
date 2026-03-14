@@ -1,4 +1,4 @@
-# NeuroNote Presents Webapp
+# SlideParser Webapp
 
 Web application to:
 
@@ -16,7 +16,7 @@ Web application to:
 - `backend/schemas.py`: option model(s)
 - `backend/services/pdf_render.py`: PDF -> PNG page rendering
 - `backend/services/chunking.py`: legacy local chunking integration (not used by `/api/process-pdf`)
-- `backend/services/neuronote_client.py`: upstream NeuroNote API client
+- `backend/services/neuronote_client.py`: upstream SlideParser API client
 - `backend/services/orchestrator.py`: end-to-end orchestration flow
 - `backend/services/transcript_audio.py`: wrapper that calls `transcript_to_audio.py` after job completion
 - `backend/services/jobs.py`: local jobs metadata + thumbnail resolution
@@ -46,7 +46,7 @@ npm install
 
 Also ensure external dependencies are installed for:
 
-- upstream NeuroNote/NeuroPresents server (configured by `NEURONOTE_API_BASE`)
+- upstream SlideParser server (configured by `NEURONOTE_API_BASE`)
 
 ## Environment Variables
 
@@ -66,8 +66,10 @@ Also ensure external dependencies are installed for:
 - `GCS_IMAGES_BUCKET` (default: `lectura-images`)
 - `GCS_IMAGES_PREFIX` (default: empty)
 - `TRANSCRIPT_TTS_ENABLED` (default: `true`; auto-generate `transcript_audio.wav` after upstream job completes)
-- `TRANSCRIPT_TTS_MODEL` (default: `gpt-4o-mini-tts`)
-- `TRANSCRIPT_TTS_VOICE` (default: `marin`)
+- `TRANSCRIPT_TTS_PROVIDER` (default: `elevenlabs`; options: `elevenlabs`, `openai`)
+- `TRANSCRIPT_TTS_MODEL` (default depends on provider: `elevenlabs=eleven_flash_v2_5`, `openai=gpt-4o-mini-tts`)
+- `TRANSCRIPT_TTS_VOICE` (default depends on provider: `elevenlabs=Matilda`, `openai=marin`)
+- `TRANSCRIPT_TTS_ELEVENLABS_OUTPUT_FORMAT` (default: `pcm_24000`; use `wav_*` or `pcm_*`)
 - `TRANSCRIPT_TTS_MAX_CHARS` (default: `3500`)
 - `TRANSCRIPT_TTS_INSTRUCTIONS` (default: patient university instructor style)
 - `TRANSCRIPT_TTS_NO_SLIDE_HEADINGS` (default: `false`)
@@ -79,13 +81,14 @@ Azure OCR credentials (required):
 - `AZURE_DOC_INTEL_ENDPOINT`
 - `AZURE_DOC_INTEL_KEY`
 
-OpenAI credentials (required for transcript audio generation):
+Transcript audio credentials (required for transcript audio generation):
 
-- `OPENAI_API_KEY`
+- `ELEVENLABS_API_KEY` (when `TRANSCRIPT_TTS_PROVIDER=elevenlabs`, default)
+- `OPENAI_API_KEY` (when `TRANSCRIPT_TTS_PROVIDER=openai`)
 
 ## Run
 
-Start NeuroNote API first (default expected at `http://127.0.0.1:8000`), then run backend:
+Start the upstream SlideParser API first (default expected at `http://127.0.0.1:8000`), then run backend:
 
 ```bash
 cd /home/javad/NeuroNote_Presents

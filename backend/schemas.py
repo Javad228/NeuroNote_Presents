@@ -13,3 +13,7 @@ class ProcessPdfOptions:
     skip_generation: bool
     previous_context: Optional[str]
     render_dpi: int
+    tts_provider: Optional[str] = None
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
+    tts_elevenlabs_output_format: Optional[str] = None
