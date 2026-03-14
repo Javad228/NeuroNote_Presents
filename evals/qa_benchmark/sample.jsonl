@@ -1,0 +1,2 @@
+{"job_id":"022d9d2cfcf5","question":"What topic is explained on the first slide?","answerable":true,"gold_answer":"Example placeholder answer for initial benchmark scaffolding.","gold_unit_ids":[],"question_type":"fact","notes":"Replace with real labeled gold unit ids after annotation."}
+{"job_id":"022d9d2cfcf5","question":"What specific numeric value is shown for the rare parameter beta on slide 99?","answerable":false,"gold_answer":"Insufficient evidence in the lecture.","gold_unit_ids":[],"question_type":"unanswerable","notes":"Synthetic unanswerable example."}

@@ -1,9 +1,12 @@
+import asyncio
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from ..config import AppConfig, get_config
+from ..services.lecture_export import LectureExportService
 from ..services.lecture import LectureService
 from ..services.jobs import JobsService
 from ..schemas import ProcessPdfOptions
@@ -11,6 +14,7 @@ from ..services.orchestrator import OrchestratorService
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/healthz")
@@ -133,6 +137,39 @@ async def get_job_audio(
     return FileResponse(path=audio_path, filename=audio_path.name, media_type=media_type)
 
 
+@router.get("/api/jobs/{job_id}/video")
+async def get_job_video(
+    job_id: str,
+    config: AppConfig = Depends(get_config),
+) -> FileResponse:
+    service = LectureExportService(config)
+    video_path = service.get_video_export_path(job_id)
+    if video_path is None:
+        raise HTTPException(status_code=404, detail="Exported video not found.")
+    return FileResponse(
+        path=video_path,
+        filename=f"{job_id}_lecture_with_script.mp4",
+        media_type="video/mp4",
+    )
+
+
+@router.post("/api/jobs/{job_id}/export-video")
+async def export_job_video(
+    job_id: str,
+    config: AppConfig = Depends(get_config),
+) -> dict[str, Any]:
+    service = LectureExportService(config)
+    try:
+        return await asyncio.to_thread(service.export_job_video, job_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Job not found.") from None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("lecture_export.failed job_id=%s", job_id)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/api/process-pdf")
 async def process_pdf(
     pdf: UploadFile = File(...),
@@ -146,12 +183,35 @@ async def process_pdf(
     min_chunk: int = Query(2, ge=1),
     use_embeddings: bool = Query(True),
     use_cache: bool = Query(True),
-    skip_generation: bool = Query(False, description="Forwarded to NeuroNote API."),
+    skip_generation: bool = Query(False, description="Forwarded to SlideParser API."),
     previous_context: Optional[str] = Query(
         None,
         description="Compatibility-only; ignored in current upstream flow.",
     ),
     render_dpi: Optional[int] = Query(None, ge=72, le=600),
+    tts_provider: Optional[str] = Query(
+        None,
+        pattern="^(openai|elevenlabs)$",
+        description="Optional transcript TTS provider override for this job.",
+    ),
+    tts_model: Optional[str] = Query(
+        None,
+        min_length=1,
+        max_length=128,
+        description="Optional transcript TTS model override for this job.",
+    ),
+    tts_voice: Optional[str] = Query(
+        None,
+        min_length=1,
+        max_length=128,
+        description="Optional transcript TTS voice override for this job.",
+    ),
+    tts_elevenlabs_output_format: Optional[str] = Query(
+        None,
+        min_length=1,
+        max_length=64,
+        description="Optional ElevenLabs output format override for this job.",
+    ),
     config: AppConfig = Depends(get_config),
 ) -> dict[str, Any]:
     filename = (pdf.filename or "").lower()
@@ -178,6 +238,10 @@ async def process_pdf(
         skip_generation=skip_generation,
         previous_context=previous_context,
         render_dpi=render_dpi or config.default_render_dpi,
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_voice=tts_voice,
+        tts_elevenlabs_output_format=tts_elevenlabs_output_format,
     )
 
     orchestrator = OrchestratorService(config)
@@ -190,4 +254,5 @@ async def process_pdf(
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("process_pdf.failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

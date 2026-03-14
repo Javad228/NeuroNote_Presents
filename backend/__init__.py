@@ -1,1 +1,1 @@
-"""Backend package for NeuroNote Presents webapp."""
+"""Backend package for SlideParser webapp."""

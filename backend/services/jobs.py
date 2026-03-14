@@ -65,16 +65,23 @@ class JobsService:
 
         result_data: dict[str, Any] | None = None
         status = "partial"
+        job_kind = "lecture"
 
         if result_path.exists() and result_path.is_file():
             try:
                 result_data = json.loads(result_path.read_text())
                 if isinstance(result_data, dict):
                     status = "complete"
+                    raw_job_kind = result_data.get("job_kind")
+                    if isinstance(raw_job_kind, str) and raw_job_kind.strip():
+                        job_kind = raw_job_kind.strip()
                 else:
                     result_data = None
             except Exception:
                 result_data = None
+
+        if job_kind == "lesson_course":
+            return None
 
         has_job_artifacts = (
             result_path.exists()
@@ -87,6 +94,8 @@ class JobsService:
 
         input_pdf_name: str | None = None
         title: str | None = None
+        deck_count = self._safe_int(result_data.get("deck_count") if result_data else None)
+        lesson_count = self._safe_int(result_data.get("lesson_count") if result_data else None)
 
         if input_pdf_path.exists():
             input_pdf_name = input_pdf_path.name
@@ -97,6 +106,11 @@ class JobsService:
             if isinstance(maybe_pdf, str) and maybe_pdf.strip():
                 input_pdf_name = Path(maybe_pdf).name
                 title = Path(maybe_pdf).stem
+
+        if result_data:
+            explicit_title = result_data.get("title")
+            if isinstance(explicit_title, str) and explicit_title.strip():
+                title = explicit_title.strip()
 
         if not input_pdf_name:
             input_pdf_name = f"{job_dir.name}.pdf"
@@ -121,12 +135,15 @@ class JobsService:
 
         return {
             "job_id": job_dir.name,
+            "job_kind": job_kind,
             "title": title,
             "input_pdf_name": input_pdf_name,
             "created_at": self._to_iso(created_ts),
             "updated_at": self._to_iso(updated_ts),
             "page_count": page_count,
             "chunk_count": chunk_count,
+            "deck_count": deck_count,
+            "lesson_count": lesson_count,
             "thumbnail_url": f"/api/jobs/{job_dir.name}/thumbnail" if thumbnail_path else None,
             "status": status,
             "_updated_ts": updated_ts,

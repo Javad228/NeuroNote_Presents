@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert lecture transcript text to audio using OpenAI gpt-4o-mini-tts.
+"""Convert lecture transcript text to audio using OpenAI or ElevenLabs.
 
 Usage examples:
   python3 transcript_to_audio.py
@@ -15,15 +15,24 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MODEL = "gpt-4o-mini-tts"
-DEFAULT_VOICE = "marin"
+SUPPORTED_PROVIDERS = {"openai", "elevenlabs"}
+DEFAULT_PROVIDER = "elevenlabs"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini-tts"
+DEFAULT_OPENAI_VOICE = "marin"
+DEFAULT_ELEVENLABS_MODEL = "eleven_flash_v2_5"
+DEFAULT_ELEVENLABS_VOICE = "Matilda"
+DEFAULT_ELEVENLABS_OUTPUT_FORMAT = "pcm_24000"
+DEFAULT_MODEL = DEFAULT_ELEVENLABS_MODEL
+DEFAULT_VOICE = DEFAULT_ELEVENLABS_VOICE
 DEFAULT_MAX_CHARS = 3500
 OPENAI_AUDIO_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
+ELEVENLABS_API_BASE_URL = "https://api.elevenlabs.io"
 DEFAULT_TTS_INSTRUCTIONS = (
     "Speak as a patient university instructor.\n"
     "Explain concepts clearly and methodically.\n"
@@ -31,6 +40,41 @@ DEFAULT_TTS_INSTRUCTIONS = (
     "Avoid dramatic emphasis."
 )
 SLIDE_INDEX_RE = re.compile(r"(?:^|_)page_(\d+)$")
+
+
+def normalize_provider(raw: str | None, default: str = DEFAULT_PROVIDER) -> str:
+    provider = str(raw or "").strip().lower() or default
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"Unsupported provider '{provider}'. "
+            f"Expected one of: {', '.join(sorted(SUPPORTED_PROVIDERS))}"
+        )
+    return provider
+
+
+def default_model_for_provider(provider: str) -> str:
+    provider = normalize_provider(provider)
+    if provider == "openai":
+        return DEFAULT_OPENAI_MODEL
+    return DEFAULT_ELEVENLABS_MODEL
+
+
+def default_voice_for_provider(provider: str) -> str:
+    provider = normalize_provider(provider)
+    if provider == "openai":
+        return DEFAULT_OPENAI_VOICE
+    return DEFAULT_ELEVENLABS_VOICE
+
+
+def env_api_key_name_for_provider(provider: str) -> str:
+    provider = normalize_provider(provider)
+    if provider == "openai":
+        return "OPENAI_API_KEY"
+    return "ELEVENLABS_API_KEY"
+
+
+def _sanitize_cli_default(value: str) -> str:
+    return str(value).replace("%", "%%")
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,14 +113,41 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--provider",
+        default=(os.getenv("TRANSCRIPT_TTS_PROVIDER", DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER),
+        choices=sorted(SUPPORTED_PROVIDERS),
+        help=f"TTS provider (default: {_sanitize_cli_default(DEFAULT_PROVIDER)}).",
+    )
+    parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"TTS model (default: {DEFAULT_MODEL}).",
+        default=None,
+        help=(
+            "TTS model ID. "
+            "Defaults depend on provider: "
+            f"openai={_sanitize_cli_default(DEFAULT_OPENAI_MODEL)}, "
+            f"elevenlabs={_sanitize_cli_default(DEFAULT_ELEVENLABS_MODEL)}."
+        ),
     )
     parser.add_argument(
         "--voice",
-        default=DEFAULT_VOICE,
-        help=f"TTS voice (default: {DEFAULT_VOICE}).",
+        default=None,
+        help=(
+            "TTS voice ID/name. "
+            "Defaults depend on provider: "
+            f"openai={_sanitize_cli_default(DEFAULT_OPENAI_VOICE)}, "
+            f"elevenlabs={_sanitize_cli_default(DEFAULT_ELEVENLABS_VOICE)}."
+        ),
+    )
+    parser.add_argument(
+        "--elevenlabs-output-format",
+        default=os.getenv(
+            "TRANSCRIPT_TTS_ELEVENLABS_OUTPUT_FORMAT",
+            DEFAULT_ELEVENLABS_OUTPUT_FORMAT,
+        ),
+        help=(
+            "ElevenLabs output format (WAV or PCM recommended for this pipeline). "
+            f"Default: {_sanitize_cli_default(DEFAULT_ELEVENLABS_OUTPUT_FORMAT)}."
+        ),
     )
     parser.add_argument(
         "--max-chars",
@@ -348,7 +419,7 @@ def split_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def synthesize_wav_chunk(
+def synthesize_openai_wav_chunk(
     *,
     api_key: str,
     model: str,
@@ -409,6 +480,170 @@ def synthesize_wav_chunk(
     return body
 
 
+def parse_pcm_output_rate(output_format: str) -> int | None:
+    output_format = str(output_format or "").strip().lower()
+    if not output_format.startswith("pcm_"):
+        return None
+    raw = output_format.split("_", 1)[1]
+    if not raw.isdigit():
+        return None
+    try:
+        rate = int(raw)
+    except Exception:
+        return None
+    return rate if rate > 0 else None
+
+
+def pcm_to_wav_bytes(*, pcm_bytes: bytes, sample_rate: int) -> bytes:
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be positive")
+    if len(pcm_bytes) % 2 != 0:
+        pcm_bytes = pcm_bytes + b"\x00"
+    out = io.BytesIO()
+    with wave.open(out, "wb") as dst:
+        dst.setnchannels(1)
+        dst.setsampwidth(2)
+        dst.setframerate(sample_rate)
+        dst.writeframes(pcm_bytes)
+    return out.getvalue()
+
+
+def fetch_elevenlabs_voice_id(
+    *,
+    api_key: str,
+    voice_name_or_id: str,
+    timeout_seconds: float = 60.0,
+) -> str:
+    candidate = str(voice_name_or_id or "").strip()
+    if not candidate:
+        raise RuntimeError("ElevenLabs voice is empty")
+
+    # Allow direct voice IDs without requiring an extra lookup call.
+    if re.fullmatch(r"[A-Za-z0-9_-]{16,}", candidate):
+        return candidate
+
+    query = urllib.parse.urlencode({"search": candidate, "page_size": "100"})
+    url = f"{ELEVENLABS_API_BASE_URL}/v2/voices?{query}"
+    req = urllib.request.Request(
+        url,
+        headers={"xi-api-key": api_key},
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+            status = int(resp.getcode() or 0)
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ElevenLabs voice lookup failed ({exc.code}): {detail[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"ElevenLabs voice lookup failed: {exc}") from exc
+
+    if status >= 400:
+        raise RuntimeError(f"ElevenLabs voice lookup failed ({status})")
+
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError("ElevenLabs voice lookup returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("ElevenLabs voice lookup returned a non-object payload")
+
+    voices = payload.get("voices")
+    if not isinstance(voices, list):
+        raise RuntimeError("ElevenLabs voice lookup response missing voices list")
+
+    exact: str | None = None
+    partial: str | None = None
+    candidate_key = candidate.casefold()
+    available_names: list[str] = []
+
+    for item in voices:
+        if not isinstance(item, dict):
+            continue
+        voice_id = str(item.get("voice_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if name:
+            available_names.append(name)
+        if not voice_id:
+            continue
+        if voice_id == candidate:
+            return voice_id
+        if name and name.casefold() == candidate_key and exact is None:
+            exact = voice_id
+        if name and candidate_key in name.casefold() and partial is None:
+            partial = voice_id
+
+    if exact:
+        return exact
+    if partial:
+        return partial
+
+    sample_names = ", ".join(sorted(available_names)[:8]) if available_names else "(none)"
+    raise RuntimeError(
+        f"Could not resolve ElevenLabs voice '{candidate}'. "
+        f"Visible voices include: {sample_names}"
+    )
+
+
+def synthesize_elevenlabs_wav_chunk(
+    *,
+    api_key: str,
+    model: str,
+    voice_id: str,
+    text: str,
+    output_format: str = DEFAULT_ELEVENLABS_OUTPUT_FORMAT,
+    timeout_seconds: float = 180.0,
+) -> bytes:
+    format_name = str(output_format or "").strip().lower()
+    if not format_name:
+        raise ValueError("ElevenLabs output format is empty")
+
+    voice_id_escaped = urllib.parse.quote(str(voice_id), safe="")
+    query = urllib.parse.urlencode({"output_format": format_name})
+    url = f"{ELEVENLABS_API_BASE_URL}/v1/text-to-speech/{voice_id_escaped}?{query}"
+
+    payload = {
+        "text": text,
+        "model_id": model,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "xi-api-key": api_key,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+            status = int(resp.getcode() or 0)
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"TTS request failed ({exc.code}): {detail[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"TTS request failed: {exc}") from exc
+
+    if status >= 400:
+        raise RuntimeError(f"TTS request failed ({status})")
+
+    if format_name.startswith("wav_"):
+        return body
+
+    sample_rate = parse_pcm_output_rate(format_name)
+    if sample_rate is not None:
+        return pcm_to_wav_bytes(pcm_bytes=body, sample_rate=sample_rate)
+
+    raise RuntimeError(
+        "Unsupported ElevenLabs output format for this pipeline. "
+        "Use wav_* or pcm_* so audio can be merged into transcript_audio.wav."
+    )
+
+
 def read_wav_frames(wav_bytes: bytes) -> tuple[tuple[int, int, int], bytes, int]:
     with wave.open(io.BytesIO(wav_bytes), "rb") as src:
         params = (src.getnchannels(), src.getsampwidth(), src.getframerate())
@@ -460,28 +695,51 @@ def write_wav_file(wav_bytes: bytes, output_path: Path) -> None:
 
 def synthesize_text_to_wav(
     *,
+    provider: str,
     api_key: str,
     model: str,
     voice: str,
     text: str,
     max_chars: int,
     instructions: str | None = None,
+    elevenlabs_output_format: str = DEFAULT_ELEVENLABS_OUTPUT_FORMAT,
+    elevenlabs_voice_id: str | None = None,
 ) -> tuple[bytes, int]:
+    provider = normalize_provider(provider)
     chunks = split_text(text, max_chars)
     if not chunks:
         raise RuntimeError("Text is empty after normalization")
 
+    resolved_voice_id = elevenlabs_voice_id
+    if provider == "elevenlabs" and not resolved_voice_id:
+        resolved_voice_id = fetch_elevenlabs_voice_id(
+            api_key=api_key,
+            voice_name_or_id=voice,
+        )
+
     wav_chunks: list[bytes] = []
     for chunk in chunks:
-        wav_chunks.append(
-            synthesize_wav_chunk(
-                api_key=api_key,
-                model=model,
-                voice=voice,
-                text=chunk,
-                instructions=instructions,
+        if provider == "openai":
+            wav_chunks.append(
+                synthesize_openai_wav_chunk(
+                    api_key=api_key,
+                    model=model,
+                    voice=voice,
+                    text=chunk,
+                    instructions=instructions,
+                )
             )
-        )
+        else:
+            assert resolved_voice_id is not None
+            wav_chunks.append(
+                synthesize_elevenlabs_wav_chunk(
+                    api_key=api_key,
+                    model=model,
+                    voice_id=resolved_voice_id,
+                    text=chunk,
+                    output_format=elevenlabs_output_format,
+                )
+            )
 
     merged = merge_wav_chunks_to_bytes(wav_chunks)
     return merged, len(chunks)
@@ -540,20 +798,31 @@ def generate_job_audio(
     job_id: str,
     jobs_root: Path,
     neuronote_pipeline_root: Path,
-    model: str = DEFAULT_MODEL,
-    voice: str = DEFAULT_VOICE,
+    provider: str = DEFAULT_PROVIDER,
+    model: str | None = None,
+    voice: str | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
     include_slide_headings: bool = True,
     instructions: str = DEFAULT_TTS_INSTRUCTIONS,
+    elevenlabs_output_format: str = DEFAULT_ELEVENLABS_OUTPUT_FORMAT,
     api_key: str | None = None,
     output_path: Path | None = None,
     timestamps_path: Path | None = None,
     artifact_roots: list[Path] | None = None,
     verbose: bool = True,
 ) -> dict[str, Any]:
-    api_key = api_key or os.getenv("OPENAI_API_KEY")
+    provider = normalize_provider(provider)
+    resolved_model = str(model or default_model_for_provider(provider)).strip()
+    resolved_voice = str(voice or default_voice_for_provider(provider)).strip()
+    if not resolved_model:
+        raise RuntimeError("TTS model is empty")
+    if not resolved_voice:
+        raise RuntimeError("TTS voice is empty")
+
+    required_api_key_env = env_api_key_name_for_provider(provider)
+    api_key = (api_key or os.getenv(required_api_key_env) or "").strip()
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set")
+        raise RuntimeError(f"{required_api_key_env} is not set")
     if max_chars < 500:
         raise ValueError("max_chars must be at least 500")
 
@@ -580,6 +849,13 @@ def generate_job_audio(
     timing_steps: list[dict[str, Any]] = []
     current_ms = 0
     total_chunks = 0
+    elevenlabs_voice_id: str | None = None
+    if provider == "elevenlabs":
+        elevenlabs_voice_id = fetch_elevenlabs_voice_id(
+            api_key=api_key,
+            voice_name_or_id=resolved_voice,
+        )
+        log(f"Resolved ElevenLabs voice '{resolved_voice}' to ID: {elevenlabs_voice_id}")
 
     for idx, item in enumerate(step_items, start=1):
         line = str(item["line"])
@@ -590,12 +866,15 @@ def generate_job_audio(
         )
 
         step_wav, chunk_count = synthesize_text_to_wav(
+            provider=provider,
             api_key=api_key,
-            model=model,
-            voice=voice,
+            model=resolved_model,
+            voice=resolved_voice,
             text=line,
             max_chars=max_chars,
             instructions=instructions,
+            elevenlabs_output_format=elevenlabs_output_format,
+            elevenlabs_voice_id=elevenlabs_voice_id,
         )
         total_chunks += chunk_count
 
@@ -632,8 +911,15 @@ def generate_job_audio(
         timestamps_payload = {
             "job_id": job_id,
             "audio_file": resolved_output_path.name,
-            "model": model,
-            "voice": voice,
+            "provider": provider,
+            "model": resolved_model,
+            "voice": resolved_voice,
+            "voice_id": elevenlabs_voice_id if provider == "elevenlabs" else None,
+            "elevenlabs_output_format": (
+                str(elevenlabs_output_format).strip().lower()
+                if provider == "elevenlabs"
+                else None
+            ),
             "instructions": instructions,
             "steps": timing_steps,
             "total_duration_ms": current_ms,
@@ -654,8 +940,10 @@ def generate_job_audio(
         "chunks": total_chunks,
         "characters": len(" ".join(transcript_text.split())),
         "total_duration_ms": current_ms,
-        "model": model,
-        "voice": voice,
+        "provider": provider,
+        "model": resolved_model,
+        "voice": resolved_voice,
+        "voice_id": elevenlabs_voice_id if provider == "elevenlabs" else None,
     }
 
 
@@ -663,9 +951,15 @@ def main() -> int:
     load_dotenv_file(Path(".env"))
     args = parse_args()
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    provider = normalize_provider(args.provider)
+    model = str(args.model or default_model_for_provider(provider)).strip()
+    voice = str(args.voice or default_voice_for_provider(provider)).strip()
+    elevenlabs_output_format = str(args.elevenlabs_output_format or "").strip().lower()
+
+    required_api_key_env = env_api_key_name_for_provider(provider)
+    api_key = (os.getenv(required_api_key_env) or "").strip()
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set")
+        raise RuntimeError(f"{required_api_key_env} is not set")
 
     if args.max_chars < 500:
         raise ValueError("--max-chars must be at least 500")
@@ -681,12 +975,14 @@ def main() -> int:
 
         print("Synthesizing transcript file...")
         merged_wav, chunk_count = synthesize_text_to_wav(
+            provider=provider,
             api_key=api_key,
-            model=args.model,
-            voice=args.voice,
+            model=model,
+            voice=voice,
             text=transcript_text,
             max_chars=args.max_chars,
             instructions=args.instructions,
+            elevenlabs_output_format=elevenlabs_output_format,
         )
 
         output_path = resolve_output_path(args, None)
@@ -707,11 +1003,13 @@ def main() -> int:
         job_id=job_id,
         jobs_root=jobs_root,
         neuronote_pipeline_root=pipeline_root,
-        model=args.model,
-        voice=args.voice,
+        provider=provider,
+        model=model,
+        voice=voice,
         max_chars=args.max_chars,
         include_slide_headings=not args.no_slide_headings,
         instructions=args.instructions,
+        elevenlabs_output_format=elevenlabs_output_format,
         api_key=api_key,
         output_path=Path(args.output).expanduser().resolve() if args.output else None,
         timestamps_path=(
