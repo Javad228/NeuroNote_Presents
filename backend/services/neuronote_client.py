@@ -21,6 +21,75 @@ class NeuroNoteClient:
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.aclose()
 
+    async def _post_with_logging(
+        self,
+        *,
+        url: str,
+        log_context: str,
+        started: float,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        try:
+            return await self.client.post(url, **kwargs)
+        except httpx.TimeoutException as exc:
+            elapsed_s = time.perf_counter() - started
+            logger.error(
+                "[neuronote] request_timeout %s base_url=%s elapsed_s=%.2f error=%s",
+                log_context,
+                self.base_url,
+                elapsed_s,
+                exc,
+            )
+            raise RuntimeError(
+                f"SlideParser request timed out for {url} after {elapsed_s:.2f}s: {exc}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            elapsed_s = time.perf_counter() - started
+            logger.error(
+                "[neuronote] request_transport_fail %s base_url=%s elapsed_s=%.2f error=%s",
+                log_context,
+                self.base_url,
+                elapsed_s,
+                exc,
+            )
+            raise RuntimeError(
+                f"SlideParser request failed for {url} after {elapsed_s:.2f}s: {exc}"
+            ) from exc
+
+    async def _get_with_logging(
+        self,
+        *,
+        url: str,
+        log_context: str,
+        started: float,
+    ) -> httpx.Response:
+        try:
+            return await self.client.get(url)
+        except httpx.TimeoutException as exc:
+            elapsed_s = time.perf_counter() - started
+            logger.error(
+                "[neuronote] request_timeout %s base_url=%s elapsed_s=%.2f error=%s",
+                log_context,
+                self.base_url,
+                elapsed_s,
+                exc,
+            )
+            raise RuntimeError(
+                f"SlideParser request timed out for {url} after {elapsed_s:.2f}s: {exc}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            elapsed_s = time.perf_counter() - started
+            logger.error(
+                "[neuronote] request_transport_fail %s base_url=%s elapsed_s=%.2f error=%s",
+                log_context,
+                self.base_url,
+                elapsed_s,
+                exc,
+            )
+            raise RuntimeError(
+                f"SlideParser request failed for {url} after {elapsed_s:.2f}s: {exc}"
+            ) from exc
+
     async def process_single(
         self,
         image_path: Path,
@@ -42,8 +111,10 @@ class NeuroNoteClient:
         if previous_context:
             data["previous_context"] = previous_context
 
-        response = await self.client.post(
-            url,
+        response = await self._post_with_logging(
+            url=url,
+            log_context=f"endpoint=/api/process image={image_path.name}",
+            started=started,
             params={"sync": "true", "skip_generation": str(skip_generation).lower()},
             data=data,
             files=files,
@@ -57,7 +128,7 @@ class NeuroNoteClient:
                 elapsed_s,
             )
             raise RuntimeError(
-                f"NeuroNote single API returned {response.status_code}: {response.text[:400]}"
+                f"SlideParser single API returned {response.status_code}: {response.text[:400]}"
             )
         logger.info(
             "[neuronote] request_done endpoint=/api/process image=%s status=%d elapsed_s=%.2f",
@@ -85,8 +156,10 @@ class NeuroNoteClient:
             for image_path in image_paths
         ]
 
-        response = await self.client.post(
-            url,
+        response = await self._post_with_logging(
+            url=url,
+            log_context=f"endpoint=/api/process-batch images={len(image_paths)}",
+            started=started,
             params={"sync": "true", "skip_generation": str(skip_generation).lower()},
             files=files,
         )
@@ -99,7 +172,7 @@ class NeuroNoteClient:
                 elapsed_s,
             )
             raise RuntimeError(
-                f"NeuroNote batch API returned {response.status_code}: {response.text[:400]}"
+                f"SlideParser batch API returned {response.status_code}: {response.text[:400]}"
             )
         logger.info(
             "[neuronote] request_done endpoint=/api/process-batch images=%d status=%d elapsed_s=%.2f",
@@ -129,7 +202,12 @@ class NeuroNoteClient:
             "chunks": chunks,
             "skip_generation": skip_generation,
         }
-        response = await self.client.post(url, json=payload)
+        response = await self._post_with_logging(
+            url=url,
+            log_context=f"endpoint=/api/process-batch-gcs chunks={len(chunks)}",
+            started=started,
+            json=payload,
+        )
         elapsed_s = time.perf_counter() - started
         if response.status_code >= 400:
             logger.error(
@@ -138,7 +216,7 @@ class NeuroNoteClient:
                 elapsed_s,
             )
             raise RuntimeError(
-                f"NeuroNote GCS batch API returned {response.status_code}: {response.text[:400]}"
+                f"SlideParser GCS batch API returned {response.status_code}: {response.text[:400]}"
             )
 
         logger.info(
@@ -148,7 +226,7 @@ class NeuroNoteClient:
         )
         payload = response.json()
         if not isinstance(payload, dict):
-            raise RuntimeError("NeuroNote GCS batch API returned a non-object payload.")
+            raise RuntimeError("SlideParser GCS batch API returned a non-object payload.")
         return payload
 
     async def process_batch_gcs_images(
@@ -175,7 +253,12 @@ class NeuroNoteClient:
             "object_paths": cleaned,
             "skip_generation": skip_generation,
         }
-        response = await self.client.post(url, json=payload)
+        response = await self._post_with_logging(
+            url=url,
+            log_context=f"endpoint=/api/process-batch-gcs object_paths={len(cleaned)}",
+            started=started,
+            json=payload,
+        )
         elapsed_s = time.perf_counter() - started
         if response.status_code >= 400:
             logger.error(
@@ -184,7 +267,7 @@ class NeuroNoteClient:
                 elapsed_s,
             )
             raise RuntimeError(
-                f"NeuroNote GCS batch API returned {response.status_code}: {response.text[:400]}"
+                f"SlideParser GCS batch API returned {response.status_code}: {response.text[:400]}"
             )
 
         logger.info(
@@ -194,22 +277,26 @@ class NeuroNoteClient:
         )
         result_payload = response.json()
         if not isinstance(result_payload, dict):
-            raise RuntimeError("NeuroNote GCS batch API returned a non-object payload.")
+            raise RuntimeError("SlideParser GCS batch API returned a non-object payload.")
         return result_payload
 
     async def get_job(self, *, job_id: str) -> dict[str, Any]:
         started = time.perf_counter()
         url = f"{self.base_url}/api/jobs/{job_id}"
-        response = await self.client.get(url)
+        response = await self._get_with_logging(
+            url=url,
+            log_context=f"endpoint=/api/jobs/{job_id}",
+            started=started,
+        )
         elapsed_s = time.perf_counter() - started
         if response.status_code >= 400:
             raise RuntimeError(
-                f"NeuroNote job status API returned {response.status_code}: {response.text[:400]}"
+                f"SlideParser job status API returned {response.status_code}: {response.text[:400]}"
             )
 
         payload = response.json()
         if not isinstance(payload, dict):
-            raise RuntimeError("NeuroNote job status API returned a non-object payload.")
+            raise RuntimeError("SlideParser job status API returned a non-object payload.")
 
         logger.debug(
             "[neuronote] poll_done endpoint=/api/jobs/%s status=%d elapsed_s=%.2f",
@@ -262,7 +349,7 @@ class NeuroNoteClient:
 
             if time.perf_counter() >= deadline:
                 raise RuntimeError(
-                    f"Timed out waiting for NeuroNote job {job_id} (last status={status or 'unknown'})."
+                    f"Timed out waiting for SlideParser job {job_id} (last status={status or 'unknown'})."
                 )
 
             await asyncio.sleep(poll_every)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 from pathlib import Path
+from posixpath import normpath
 from typing import Any
 
 
@@ -50,24 +51,43 @@ class GCSUploadService:
     def bucket_path_for_job(self, job_id: str) -> str:
         return f"gs://{self.bucket_name}/{self._job_folder(job_id)}"
 
-    def upload_images(self, *, job_id: str, images_dir: Path) -> list[dict[str, str]]:
+    @staticmethod
+    def _normalize_object_path(value: str) -> str:
+        candidate = str(value or "").strip().replace("\\", "/").lstrip("/")
+        if not candidate:
+            raise RuntimeError("Upload object path cannot be empty.")
+        normalized = normpath(candidate).replace("\\", "/")
+        parts = [part for part in normalized.split("/") if part not in {"", "."}]
+        if not parts or any(part == ".." for part in parts):
+            raise RuntimeError(f"Invalid upload object path: {value!r}")
+        return "/".join(parts)
+
+    def upload_named_files(
+        self,
+        *,
+        job_id: str,
+        uploads: list[tuple[Path, str]],
+    ) -> list[dict[str, str]]:
         storage_client = self._create_storage_client()
         bucket = storage_client.bucket(self.bucket_name)
         job_folder = self._job_folder(job_id)
 
         uploaded: list[dict[str, str]] = []
-        for image_path in self._collect_images(images_dir):
-            blob_name = f"{job_folder}/{image_path.name}"
+        for file_path, object_path in uploads:
+            if not file_path.exists() or not file_path.is_file():
+                raise RuntimeError(f"Upload file does not exist: {file_path}")
+            normalized_object_path = self._normalize_object_path(object_path)
+            blob_name = f"{job_folder}/{normalized_object_path}"
             blob = bucket.blob(blob_name)
-            content_type, _ = mimetypes.guess_type(image_path.name)
+            content_type, _ = mimetypes.guess_type(file_path.name)
             blob.upload_from_filename(
-                str(image_path),
+                str(file_path),
                 content_type=content_type or "application/octet-stream",
             )
             uploaded.append(
                 {
-                    "filename": image_path.name,
-                    "object_path": image_path.name,
+                    "filename": file_path.name,
+                    "object_path": normalized_object_path,
                     "blob_name": blob_name,
                     "gs_uri": f"gs://{self.bucket_name}/{blob_name}",
                 }
@@ -75,11 +95,29 @@ class GCSUploadService:
 
         return uploaded
 
+    def upload_images(self, *, job_id: str, images_dir: Path) -> list[dict[str, str]]:
+        return self.upload_named_files(
+            job_id=job_id,
+            uploads=[(image_path, image_path.name) for image_path in self._collect_images(images_dir)],
+        )
+
     async def upload_images_async(self, *, job_id: str, images_dir: Path) -> list[dict[str, str]]:
         return await asyncio.to_thread(
             self.upload_images,
             job_id=job_id,
             images_dir=images_dir,
+        )
+
+    async def upload_named_files_async(
+        self,
+        *,
+        job_id: str,
+        uploads: list[tuple[Path, str]],
+    ) -> list[dict[str, str]]:
+        return await asyncio.to_thread(
+            self.upload_named_files,
+            job_id=job_id,
+            uploads=uploads,
         )
 
     def folder_for_job(self, job_id: str) -> str:

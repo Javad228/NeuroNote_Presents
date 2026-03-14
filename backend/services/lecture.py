@@ -29,7 +29,7 @@ class LectureService:
             config.neuronote_pipeline_root / "jobs",
             config.neuronote_pipeline_root,
             *config.neuronote_artifact_roots,
-            # Local fallback when artifacts are written by the separate NeuroPresents backend.
+            # Local fallback when artifacts are written by the separate SlideParser backend.
             Path.home() / "NeuroPresentsBackend" / "neuropresentsbackend" / "jobs",
         ]
 
@@ -471,14 +471,17 @@ class LectureService:
         if result_payload is None:
             return None
 
+        result_title = result_payload.get("title")
+        title = result_title.strip() if isinstance(result_title, str) and result_title.strip() else ""
         input_pdf_name = "input.pdf"
         input_pdf_path = self.get_input_pdf_path(job_id)
         if input_pdf_path is not None:
             input_pdf_name = input_pdf_path.name
-            title = input_pdf_path.stem
-            if input_pdf_name.lower() == "input.pdf":
-                title = f"Lecture {job_id}"
-        else:
+            if not title:
+                title = input_pdf_path.stem
+                if input_pdf_name.lower() == "input.pdf":
+                    title = f"Lecture {job_id}"
+        elif not title:
             title = job_id
 
         slides: list[dict[str, Any]] = []
@@ -787,81 +790,15 @@ class LectureService:
             return []
         if not isinstance(steps, list) or not steps:
             return []
-
-        job_dir = self.jobs_service.resolve_job_dir(job_id)
-        if job_dir is None:
+        slide_name = f"{image_name}.png"
+        if self.get_slide_image_path(job_id, slide_name) is None:
             return []
 
-        slide_path = self.get_slide_image_path(job_id, f"{image_name}.png")
-        if slide_path is None:
-            return []
-
-        rendered_dir = job_dir / "rendered_steps" / image_name
-        rendered_dir.mkdir(parents=True, exist_ok=True)
-
-        urls: list[str] = []
-        to_render: list[tuple[int, Path]] = []
-        for idx in range(len(steps)):
-            filename = f"step_{idx + 1:03d}.jpg"
-            out_path = rendered_dir / filename
-            urls.append(f"/api/jobs/{job_id}/rendered/{image_name}/{filename}")
-            if not out_path.exists() or not out_path.is_file():
-                to_render.append((idx, out_path))
-
-        if not to_render:
-            return urls
-
-        base_image = cv2.imread(str(slide_path))
-        if base_image is None:
-            return urls
-
-        region_map = {
-            region.get("id"): region
-            for region in regions
-            if isinstance(region, dict) and isinstance(region.get("id"), str)
-        }
-        h_img, w_img = base_image.shape[:2]
-        pad = 2
         strength = max(0.0, min(2.0, float(strength)))
-
-        for step_index, out_path in to_render:
-            step = steps[step_index]
-            if not isinstance(step, dict):
-                continue
-
-            image = base_image.copy()
-            active_ids = self._resolve_active_ids(
-                region_ids=step.get("region_ids") if isinstance(step.get("region_ids"), list) else [],
-                clusters=clusters if isinstance(clusters, list) else [],
-                groups=groups if isinstance(groups, list) else [],
-            )
-
-            for region_id in active_ids:
-                region = region_map.get(region_id)
-                if not isinstance(region, dict):
-                    continue
-                if region.get("kind") != "text":
-                    continue
-
-                bbox = region.get("bbox")
-                if not isinstance(bbox, list) or len(bbox) != 4:
-                    continue
-
-                try:
-                    x1, y1, x2, y2 = [int(round(float(v))) for v in bbox]
-                except Exception:
-                    continue
-
-                x1, x2 = min(x1, x2), max(x1, x2)
-                y1, y2 = min(y1, y2), max(y1, y2)
-                x1_p, y1_p = max(0, x1 - pad), max(0, y1 - pad)
-                x2_p, y2_p = min(w_img, x2 + pad), min(h_img, y2 + pad)
-                if x2_p - x1_p < 3 or y2_p - y1_p < 3:
-                    continue
-
-                crop = image[y1_p:y2_p, x1_p:x2_p]
-                image[y1_p:y2_p, x1_p:x2_p] = recolor_text_simple(crop, strength=strength)
-
-            cv2.imwrite(str(out_path), image, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
-
+        urls: list[str] = []
+        for idx in range(len(steps)):
+            url = f"/api/jobs/{job_id}/slides/{slide_name}/rendered?step_index={idx}"
+            if abs(strength - 1.0) > 1e-6:
+                url = f"{url}&strength={strength:.3f}".rstrip("0").rstrip(".")
+            urls.append(url)
         return urls

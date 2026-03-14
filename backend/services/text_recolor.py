@@ -80,16 +80,35 @@ def recolor_text_simple(crop_bgr: np.ndarray, strength: float = 0.65) -> np.ndar
     grad_n = np.clip(grad / g_hi, 0.0, 1.0)
 
     # Threshold: keep only "edgey" areas
-    edge_gate = (grad_n > 0.20).astype(np.float32)
-
-    # Expand gate slightly so letter interiors survive (not just outlines)
+    edge_gate = (grad_n > 0.18).astype(np.float32)
     edge_gate_u8 = (edge_gate * 255).astype(np.uint8)
-    edge_gate_u8 = cv2.dilate(edge_gate_u8, np.ones((3, 3), np.uint8), iterations=1)
-    edge_gate = edge_gate_u8.astype(np.float32) / 255.0
+
+    # Dilate edges slightly to close hairline gaps before flood analysis
+    edges_closed = cv2.dilate(edge_gate_u8, np.ones((3, 3), np.uint8), iterations=1)
+
+    # Flood-fill approach: find regions enclosed by edges (glyph stroke
+    # interiors) and fill them, without expanding the outer boundary at all.
+    inv = cv2.bitwise_not(edges_closed)
+    num_labels, labels = cv2.connectedComponents(inv, connectivity=4)
+
+    h_g, w_g = labels.shape
+    border_labels = set()
+    border_labels.update(labels[0, :].tolist())
+    border_labels.update(labels[h_g - 1, :].tolist())
+    border_labels.update(labels[:, 0].tolist())
+    border_labels.update(labels[:, w_g - 1].tolist())
+
+    interior_flags = np.zeros(num_labels, dtype=bool)
+    for lbl in range(num_labels):
+        if lbl not in border_labels:
+            interior_flags[lbl] = True
+    edges_closed[interior_flags[labels]] = 255
+
+    edge_gate = edges_closed.astype(np.float32) / 255.0
 
     mask = mask * edge_gate
 
-    # Optional tiny dilation (keep minimal to avoid creeping into boxes)
+    # Small dilation to cover anti-aliased glyph edges
     mask_u8 = (mask * 255).astype(np.uint8)
     mask_u8 = cv2.dilate(mask_u8, np.ones((2, 2), np.uint8), iterations=1)
     mask = mask_u8.astype(np.float32) / 255.0

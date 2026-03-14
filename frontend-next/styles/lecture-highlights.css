@@ -1,0 +1,326 @@
+.highlight-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.highlight-box {
+  position: absolute;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.highlight-box.text {
+  background: rgba(255, 214, 82, 0.25);
+  border: 2px solid rgba(255, 198, 46, 0.85);
+  box-shadow: 0 0 24px rgba(255, 191, 0, 0.2);
+}
+
+.highlight-box.visual {
+  background: rgba(90, 211, 255, 0.16);
+  border: 2px solid rgba(56, 188, 255, 0.85);
+  box-shadow: 0 0 24px rgba(56, 188, 255, 0.22);
+}
+
+.highlight-box.cluster {
+  background: rgba(81, 132, 255, 0.14);
+  border: 2px solid rgba(81, 132, 255, 0.85);
+  box-shadow: 0 0 24px rgba(81, 132, 255, 0.16);
+}
+
+.highlight-box.group {
+  background: rgba(255, 124, 89, 0.14);
+  border: 2px solid rgba(255, 124, 89, 0.84);
+  box-shadow: 0 0 24px rgba(255, 124, 89, 0.16);
+}
+
+.highlight-box.active { opacity: 1; animation: boxPulse 1.5s ease-in-out infinite; }
+.highlight-box.entering { opacity: 1; animation: boxEnter 0.65s ease forwards; }
+.highlight-box.exiting { opacity: 1; animation: boxExit 0.24s ease forwards; }
+
+.highlight-polygon {
+  fill: transparent;
+  fill-opacity: 0;
+  stroke-width: 3;
+  opacity: 0;
+  stroke-dasharray: var(--poly-len, 240);
+  stroke-dashoffset: var(--poly-len, 240);
+  transition: opacity 0.24s ease, transform 0.28s ease, stroke-width 0.24s ease, filter 0.24s ease;
+}
+
+.highlight-polygon.text {
+  fill: rgba(255, 214, 82, 0.24);
+  stroke: rgba(255, 198, 46, 0.95);
+}
+
+.highlight-polygon.visual {
+  --lift-dx: 0px;
+  --lift-dy: -9px;
+  fill: transparent;
+  stroke: rgba(56, 188, 255, 0.95);
+  transform: translate3d(0, 0, 0);
+  transform-origin: center;
+  will-change: transform, opacity, stroke-width;
+}
+
+.highlight-polygon.active {
+  opacity: 1;
+  fill-opacity: 1;
+  stroke-dashoffset: 0;
+  stroke-width: 4.5;
+  animation: polygonPulse 1.5s ease-in-out infinite;
+}
+
+.highlight-polygon.text.active {
+  filter: drop-shadow(0 0 8px rgba(255, 198, 46, 0.56));
+}
+
+.highlight-polygon.visual.active {
+  fill-opacity: 0;
+  stroke-width: 2.5;
+  transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  animation:
+    polygonLiftEnter 0.16s cubic-bezier(0.22, 0.9, 0.3, 1) both,
+    polygonLiftPulse 1.6s ease-in-out 0.16s infinite;
+  filter: drop-shadow(0 0 6px rgba(56, 188, 255, 0.45));
+}
+
+.highlight-polygon.visual.exiting {
+  opacity: 1;
+  fill-opacity: 0;
+  stroke-width: 2.5;
+  transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  animation: polygonLiftExit 0.22s cubic-bezier(0.3, 0.05, 0.7, 0.98) forwards;
+  filter: drop-shadow(0 0 6px rgba(56, 188, 255, 0.45));
+}
+
+.highlight-lift-underlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(7, 12, 20, 0);
+  transition: opacity 0.12s ease, background-color 0.16s ease;
+}
+
+.highlight-lift-underlay.visual.active {
+  opacity: 1;
+  background: rgba(4, 8, 16, 0.68);
+  backdrop-filter: brightness(0.32) saturate(0.74);
+  -webkit-backdrop-filter: brightness(0.32) saturate(0.74);
+  animation: none;
+}
+
+.highlight-lift-underlay.visual.exiting {
+  opacity: 1;
+  background: rgba(4, 8, 16, 0.68);
+  backdrop-filter: brightness(0.32) saturate(0.74);
+  -webkit-backdrop-filter: brightness(0.32) saturate(0.74);
+  animation: underlayExit 0.12s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.highlight-lift {
+  --lift-dx: 0px;
+  --lift-dy: -9px;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
+  background-repeat: no-repeat;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, filter, opacity;
+  transition: opacity 0.12s ease, transform 0.22s ease, filter 0.22s ease;
+}
+
+.highlight-lift::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: rgba(110, 233, 255, 0.12);
+  transition: opacity 0.22s ease;
+}
+
+.highlight-lift.visual.active {
+  opacity: 1;
+  transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  filter: brightness(1.04) saturate(1.06) drop-shadow(0 0 0 rgba(56, 188, 255, 0.4)) drop-shadow(0 0 10px rgba(56, 188, 255, 0.32)) drop-shadow(0 10px 16px rgba(8, 27, 45, 0.28));
+  animation:
+    liftEnter 0.16s cubic-bezier(0.22, 0.9, 0.3, 1) both,
+    liftPulse 1.6s ease-in-out 0.16s infinite;
+}
+
+.highlight-lift.visual.active::after { opacity: 1; }
+
+.highlight-lift.visual.exiting {
+  opacity: 1;
+  transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  filter: brightness(1.04) saturate(1.06) drop-shadow(0 0 0 rgba(56, 188, 255, 0.4)) drop-shadow(0 0 10px rgba(56, 188, 255, 0.32)) drop-shadow(0 10px 16px rgba(8, 27, 45, 0.28));
+  animation: liftExit 0.22s cubic-bezier(0.3, 0.05, 0.7, 0.98) forwards;
+}
+
+.highlight-lift.visual.exiting::after {
+  opacity: 1;
+  animation: liftOverlayExit 0.22s ease forwards;
+}
+
+.highlight-polygon.entering { opacity: 1; animation: polygonOutlineFill 0.9s ease forwards; }
+.highlight-polygon.exiting { opacity: 1; animation: polygonExit 0.24s ease forwards; }
+
+@keyframes polygonOutlineFill {
+  0% { fill-opacity: 0; stroke-dashoffset: var(--poly-len, 240); }
+  45% { fill-opacity: 0; stroke-dashoffset: 0; }
+  100% { fill-opacity: 1; stroke-dashoffset: 0; }
+}
+
+@keyframes polygonExit {
+  0% { opacity: 1; fill-opacity: 1; }
+  100% { opacity: 0; fill-opacity: 0; }
+}
+
+@keyframes polygonPulse {
+  0%, 100% { stroke-width: 3; }
+  50% { stroke-width: 4.5; }
+}
+
+@keyframes liftPulse {
+  0%, 100% { transform: translate3d(var(--lift-dx), var(--lift-dy), 0); }
+  50% { transform: translate3d(var(--lift-dx), calc(var(--lift-dy) - 1px), 0); }
+}
+
+@keyframes liftEnter {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(var(--lift-dx), var(--lift-dy), 0); }
+}
+
+@keyframes liftExit {
+  0% {
+    opacity: 1;
+    transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+  }
+  42% {
+    opacity: 1;
+    transform: translate3d(calc(var(--lift-dx) * 0.55), calc(var(--lift-dy) * 0.55), 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes polygonLiftPulse {
+  0%, 100% { transform: translate3d(var(--lift-dx), var(--lift-dy), 0); }
+  50% { transform: translate3d(var(--lift-dx), calc(var(--lift-dy) - 1px), 0); }
+}
+
+@keyframes polygonLiftEnter {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(var(--lift-dx), var(--lift-dy), 0); }
+}
+
+@keyframes polygonLiftExit {
+  0% {
+    opacity: 1;
+    transform: translate3d(var(--lift-dx), var(--lift-dy), 0);
+    stroke-width: 2.5;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+    stroke-width: 1.8;
+  }
+}
+
+@keyframes liftOverlayExit {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes underlayExit {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes boxPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+
+@keyframes boxEnter {
+  0% { opacity: 0.1; transform: scale(0.985); }
+  45% { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes boxExit {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Timeline rail progress pseudo-element */
+.timeline-rail::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: var(--timeline-progress-pct, 0%);
+  pointer-events: none;
+  transition: none;
+}
+
+.timeline-rail::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+  z-index: 1;
+}
+
+/* Speed range slider track and thumb overrides */
+#speedRange::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+}
+
+#speedRange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--background));
+  background: hsl(var(--primary));
+  cursor: pointer;
+}
+
+#speedRange::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+}
+
+#speedRange::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--background));
+  background: hsl(var(--primary));
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

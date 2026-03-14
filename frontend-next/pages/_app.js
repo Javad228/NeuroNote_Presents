@@ -1,6 +1,5 @@
-import "../styles/style.css";
-import "../styles/new-project.css";
-import "../styles/lecture.css";
+import "../styles/globals.css";
+import "../styles/lecture-highlights.css";
 import { useCallback, useEffect, useState } from "react";
 
 const THEME_STORAGE_KEY = "nn_theme";

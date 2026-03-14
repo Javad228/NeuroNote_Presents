@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 venv/
 jobs/
+demo-animation/
+take_screenshots.py
+transcript_to_audio.py
+capture_animation_screenshots.py

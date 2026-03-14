@@ -1,4 +1,4 @@
-# NeuroNote Q&A RAG Pipeline
+# SlideParser Q&A RAG Pipeline
 
 This document explains, in implementation-level detail, how Q&A works in this repository.
 

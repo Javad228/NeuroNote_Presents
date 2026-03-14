@@ -51,7 +51,15 @@ class TranscriptAudioService:
         self._module = module
         return module
 
-    def generate_for_job(self, job_id: str) -> dict[str, Any]:
+    def generate_for_job(
+        self,
+        job_id: str,
+        *,
+        tts_provider: str | None = None,
+        tts_model: str | None = None,
+        tts_voice: str | None = None,
+        tts_elevenlabs_output_format: str | None = None,
+    ) -> dict[str, Any]:
         module = self._load_module()
         load_dotenv_fn = getattr(module, "load_dotenv_file", None)
         if callable(load_dotenv_fn):
@@ -62,8 +70,32 @@ class TranscriptAudioService:
         if not callable(generate_fn):
             raise RuntimeError("transcript_to_audio.generate_job_audio is not available")
 
-        model = os.getenv("TRANSCRIPT_TTS_MODEL", str(getattr(module, "DEFAULT_MODEL", "gpt-4o-mini-tts")))
-        voice = os.getenv("TRANSCRIPT_TTS_VOICE", str(getattr(module, "DEFAULT_VOICE", "marin")))
+        default_provider = str(getattr(module, "DEFAULT_PROVIDER", "openai"))
+        provider_raw = tts_provider or os.getenv("TRANSCRIPT_TTS_PROVIDER", default_provider)
+        normalize_provider_fn = getattr(module, "normalize_provider", None)
+        if callable(normalize_provider_fn):
+            provider = str(normalize_provider_fn(provider_raw, default_provider))
+        else:
+            provider = provider_raw.strip().lower() or default_provider
+
+        default_model_fn = getattr(module, "default_model_for_provider", None)
+        if callable(default_model_fn):
+            default_model = str(default_model_fn(provider))
+        else:
+            default_model = str(getattr(module, "DEFAULT_MODEL", "gpt-4o-mini-tts"))
+        model = tts_model or os.getenv("TRANSCRIPT_TTS_MODEL", default_model)
+
+        default_voice_fn = getattr(module, "default_voice_for_provider", None)
+        if callable(default_voice_fn):
+            default_voice = str(default_voice_fn(provider))
+        else:
+            default_voice = str(getattr(module, "DEFAULT_VOICE", "marin"))
+        voice = tts_voice or os.getenv("TRANSCRIPT_TTS_VOICE", default_voice)
+
+        elevenlabs_output_format = tts_elevenlabs_output_format or os.getenv(
+            "TRANSCRIPT_TTS_ELEVENLABS_OUTPUT_FORMAT",
+            str(getattr(module, "DEFAULT_ELEVENLABS_OUTPUT_FORMAT", "pcm_24000")),
+        )
 
         default_max_chars = int(getattr(module, "DEFAULT_MAX_CHARS", 3500))
         max_chars_raw = os.getenv("TRANSCRIPT_TTS_MAX_CHARS", str(default_max_chars))
@@ -84,11 +116,13 @@ class TranscriptAudioService:
             job_id=job_id,
             jobs_root=self.config.jobs_root,
             neuronote_pipeline_root=self.config.neuronote_pipeline_root,
+            provider=provider,
             model=model,
             voice=voice,
             max_chars=max_chars,
             include_slide_headings=include_slide_headings,
             instructions=instructions,
+            elevenlabs_output_format=elevenlabs_output_format,
             artifact_roots=self.config.neuronote_artifact_roots,
             verbose=verbose,
         )

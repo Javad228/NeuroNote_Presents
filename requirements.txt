@@ -2,9 +2,8 @@ fastapi
 uvicorn[standard]
 python-multipart
 httpx
+pillow
 pymupdf
 azure-ai-documentintelligence
 python-dotenv
 google-cloud-storage
-openai
-rank-bm25

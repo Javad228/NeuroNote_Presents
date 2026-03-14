@@ -53,8 +53,8 @@ def create_app() -> FastAPI:
     configure_logging()
     config = get_config()
     app = FastAPI(
-        title="NeuroNote Presents Orchestrator",
-        description="Upload lecture PDFs, chunk slides, and run NeuroNote per chunk.",
+        title="SlideParser Orchestrator",
+        description="Upload lecture PDFs, chunk slides, and run SlideParser per chunk.",
         version="0.2.0",
     )
 
@@ -105,7 +105,7 @@ def create_app() -> FastAPI:
         @app.get("/")
         async def index() -> dict[str, str]:
             return {
-                "service": "NeuroNote Presents Orchestrator",
+                "service": "SlideParser Orchestrator",
                 "frontend": "Use the Next.js app in frontend-next/",
                 "health": "/healthz",
                 "docs": "/docs",
